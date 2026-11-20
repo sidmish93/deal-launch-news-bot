@@ -155,7 +155,7 @@ def classify_press(title: str) -> str | None:
     kind = classify(title)
     if kind:
         return kind
-    if re.search(r"\bipo\b", low):
+    if re.search(r"\bipos?\b", low):
         return "IPO"
     return None
 
@@ -204,12 +204,15 @@ def press_deals() -> list[Deal]:
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=36)
     sources = list(SOURCES)
     for name in ET_VERTICALS:
+        feeds = (f"https://{name}.economictimes.indiatimes.com/rss/recentstories",)
+        if name == "auto":
+            feeds = feeds + (_site_feed("auto.economictimes.indiatimes.com"),)
         sources.append((
             "Economic Times",
             "economictimes.indiatimes.com",
             (),
             False,
-            (f"https://{name}.economictimes.indiatimes.com/rss/recentstories",),
+            feeds,
         ))
     found: list[list[Deal]] = []
     pool = ThreadPoolExecutor(max_workers=12)
@@ -240,6 +243,7 @@ def _source_deals(source: tuple, cutoff: datetime.datetime) -> list[Deal]:
     seen = set()
     if domain == "ndtvprofit.com":
         sitemaps = tuple(sitemaps) + _ndtv_daily_sitemaps()
+        feeds = tuple(feeds) + (_site_feed("ndtvprofit.com"),)
     parser = _listed_entries if domain == "ndtvprofit.com" else _sitemap_entries
     for url in sitemaps:
         try:
@@ -399,6 +403,12 @@ def _sitemap_entries(payload: bytes) -> list[tuple[str, str, datetime.datetime |
 
 def _search_url(domain: str, query: str) -> str:
     quoted = urllib.parse.quote(f"({query}) site:{domain}")
+    return "https://www.bing.com/news/search?q=" + quoted + "&format=RSS&sortbydate=1&setlang=en-IN&count=40"
+
+
+def _site_feed(host: str) -> str:
+    """Newest stories on one site, with no keyword filter to crowd a deal out."""
+    quoted = urllib.parse.quote(f"site:{host}")
     return "https://www.bing.com/news/search?q=" + quoted + "&format=RSS&sortbydate=1&setlang=en-IN&count=40"
 
 

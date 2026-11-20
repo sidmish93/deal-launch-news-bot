@@ -65,6 +65,10 @@ class ClassifyTests(unittest.TestCase):
             kept("Zelio E-Mobility gets BSE nod for ₹168 crore preferential issue, warrants"),
             "Preferential",
         )
+        self.assertEqual(
+            kept("SEBI Approves Arohan Financial Services, Pristine Logistics To Float IPOs: Check Issue Details"),
+            "IPO",
+        )
         self.assertEqual(kept("Integris Medtech to launch Rs 3,000-crore IPO next week"), "IPO")
 
     def test_bing_tracker_url(self):
