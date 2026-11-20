@@ -305,11 +305,14 @@ def _note_group(token: str, state: dict, chat_id: int, note: str) -> None:
 def _settle_groups(token: str, state: dict) -> None:
     """Drop a basic group id after Telegram upgrades that group to a supergroup."""
     for chat_id in list(state["chats"]):
+        if chat_id >= 0 or str(chat_id).startswith("-100"):
+            continue
         try:
-            _api(token, "getChat", {"chat_id": chat_id})
+            _api(token, "sendChatAction", {"chat_id": chat_id, "action": "typing"})
         except RuntimeError as exc:
             moved = _migrated_chat_id(exc)
             if moved is None:
+                print(f"group {chat_id} skipped: {_redact(exc, token)}", flush=True)
                 continue
             _replace_chat(state, chat_id, moved)
             print(f"group {chat_id} moved to {moved}", flush=True)
@@ -363,6 +366,8 @@ def _add_chat(token: str, state: dict, chat_id: int, welcome: bool = True) -> No
 
 def _broadcast(token: str, state: dict, text: str) -> None:
     for chat_id in list(state["chats"]):
+        if chat_id not in state["chats"]:
+            continue
         target = chat_id
         try:
             _send(token, target, text)
@@ -371,11 +376,13 @@ def _broadcast(token: str, state: dict, text: str) -> None:
             if moved is None:
                 print(f"send to {chat_id} failed: {_redact(exc, token)}", flush=True)
                 continue
+            already = moved in state["chats"]
             _replace_chat(state, chat_id, moved)
-            target = moved
             print(f"group {chat_id} moved to {moved}", flush=True)
+            if already:
+                continue
             try:
-                _send(token, target, text)
+                _send(token, moved, text)
             except RuntimeError as exc2:
                 print(f"send to {moved} failed: {_redact(exc2, token)}", flush=True)
 
