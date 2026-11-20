@@ -7,10 +7,12 @@ include it. Each paper's sitemap is the list of what it actually published.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import email.utils
 import html
 import re
+import socket
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -19,13 +21,14 @@ from dataclasses import dataclass
 
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
-# Publisher sitemaps, not a search engine's short list. Economic Times verticals
-# such as ET Auto are not in the main sitemap, and NDTV Profit blocks its own
-# sitemap, so those two also use a narrow Bing query per deal type.
+# Publisher lists, not a search engine's short list. The Economic Times main
+# sitemap does not include ET Auto and the other verticals, so those are read
+# from each vertical's own recent-stories feed. NDTV Profit's daily sitemap is
+# the list of what it published. A narrow Bing query stays as a backup.
 SOURCES = (
-    ("CNBC TV18", "cnbctv18.com", ("https://www.cnbctv18.com/commonfeeds/v1/cne/sitemap/google-news.xml",), False),
-    ("Moneycontrol", "moneycontrol.com", ("https://www.moneycontrol.com/news/news-sitemap.xml",), False),
-    ("NDTV Profit", "ndtvprofit.com", (), True),
+    ("CNBC TV18", "cnbctv18.com", ("https://www.cnbctv18.com/commonfeeds/v1/cne/sitemap/google-news.xml",), False, ()),
+    ("Moneycontrol", "moneycontrol.com", ("https://www.moneycontrol.com/news/news-sitemap.xml",), False, ()),
+    ("NDTV Profit", "ndtvprofit.com", (), True, ()),
     (
         "Economic Times",
         "economictimes.indiatimes.com",
@@ -34,8 +37,9 @@ SOURCES = (
             "https://economictimes.indiatimes.com/etstatic/sitemaps/et/news/sitemap-yesterday.xml",
         ),
         True,
+        (),
     ),
-    ("Business Standard", "business-standard.com", ("https://www.business-standard.com/sitemap/news-sitemap.xml",), False),
+    ("Business Standard", "business-standard.com", ("https://www.business-standard.com/sitemap/news-sitemap.xml",), False, ()),
     (
         "Mint",
         "livemint.com",
@@ -44,7 +48,17 @@ SOURCES = (
             "https://www.livemint.com/sitemap/yesterday.xml",
         ),
         False,
+        (),
     ),
+)
+
+# Same paper, separate sites. /rss/recentstories is the fresh list; the section
+# feeds are not.
+ET_VERTICALS = (
+    "auto", "chemicals", "energy", "bfsi", "cfo", "ciso", "realty", "pharma",
+    "infra", "telecom", "manufacturing", "government", "legal", "health",
+    "cio", "retail", "hospitality", "travel", "agriculture", "electronics",
+    "sustainability",
 )
 
 BING_QUERIES = (
@@ -165,6 +179,7 @@ def _indian_issue(title: str, kind: str) -> bool:
         r"\bto launch\b", r"\blaunches\b", r"\bto raise\b", r"\braises\b", r"\braising\b",
         r"fresh issue", r"offer for sale", r"price band", r"\bto open\b", r"\bopens\b",
         r"ipo size", r"\btrims\b", r"\bhalves\b", r"\bcuts\b",
+        r"\bto float\b", r"\bapproves\b", r"\bnod\b",
     ))
 
 
@@ -185,12 +200,29 @@ def _on_source(url: str, domain: str) -> bool:
 
 
 def press_deals() -> list[Deal]:
+    socket.setdefaulttimeout(15)
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=36)
+    sources = list(SOURCES)
+    for name in ET_VERTICALS:
+        sources.append((
+            "Economic Times",
+            "economictimes.indiatimes.com",
+            (),
+            False,
+            (f"https://{name}.economictimes.indiatimes.com/rss/recentstories",),
+        ))
     found: list[list[Deal]] = []
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = [pool.submit(_source_deals, source, cutoff) for source in SOURCES]
+    pool = ThreadPoolExecutor(max_workers=12)
+    try:
+        futures = [pool.submit(_source_deals, source, cutoff) for source in sources]
         for future in futures:
-            found.append(future.result())
+            try:
+                found.append(future.result(timeout=40))
+            except Exception as exc:
+                print(f"feed skipped: {exc}", flush=True)
+                found.append([])
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     deals = []
     seen = set()
     for batch in found:
@@ -203,17 +235,30 @@ def press_deals() -> list[Deal]:
 
 
 def _source_deals(source: tuple, cutoff: datetime.datetime) -> list[Deal]:
-    label, domain, sitemaps, use_bing = source
+    label, domain, sitemaps, use_bing, feeds = source
     deals = []
     seen = set()
+    if domain == "ndtvprofit.com":
+        sitemaps = tuple(sitemaps) + _ndtv_daily_sitemaps()
+    parser = _listed_entries if domain == "ndtvprofit.com" else _sitemap_entries
     for url in sitemaps:
         try:
-            entries = _sitemap_entries(_fetch(url))
+            entries = parser(_fetch(url))
         except Exception as exc:
             print(f"feed skipped: {label}: {exc}", flush=True)
             continue
         for title, link, published in entries:
             _add_deal(deals, seen, label, domain, title, link, published, "", cutoff)
+    for url in feeds:
+        try:
+            items = _items(url)
+        except Exception as exc:
+            print(f"feed skipped: {label}: {exc}", flush=True)
+            continue
+        for item in items:
+            title = _text(item.find("title"))
+            link = direct_url(_text(item.find("link")) or _text(item.find("guid")))
+            _add_deal(deals, seen, label, domain, title, link, _when(item), _text(item.find("description")), cutoff)
     if use_bing:
         for query in BING_QUERIES:
             try:
@@ -252,6 +297,80 @@ def _add_deal(deals, seen, label, domain, title, link, published, description, c
             published=published,
         )
     )
+
+
+def _ndtv_daily_sitemaps() -> tuple[str, ...]:
+    now = datetime.datetime.now(IST)
+    urls = []
+    for shift in (0, 1):
+        day = (now - datetime.timedelta(days=shift)).date()
+        urls.append(f"https://www.ndtvprofit.com/sitemap/sitemap-daily-{day.isoformat()}.xml")
+    return tuple(urls)
+
+
+def _title_from_slug(url: str) -> str:
+    slug = (url or "").rstrip("/").rsplit("/", 1)[-1]
+    slug = re.sub(r"-\d{5,}$", "", slug)
+    text = re.sub(r"\s+", " ", slug.replace("-", " ")).strip()
+    text = re.sub(r"\brs\b", "Rs", text)
+    text = re.sub(r"\bcr\b", "crore", text)
+    if not text:
+        return url
+    return text[0].upper() + text[1:]
+
+
+def _listed_entries(payload: bytes) -> list[tuple[str, str, datetime.datetime | None]]:
+    """Article link and time from a sitemap that has no headline, only the URL."""
+    root = ET.fromstring(payload)
+    entries = []
+    for node in root.iter():
+        if not node.tag.endswith("url"):
+            continue
+        link = ""
+        published = None
+        for child in list(node):
+            name = child.tag.rsplit("}", 1)[-1]
+            text = _text_value(child.text)
+            if name == "loc" and text.startswith("http") and not link:
+                link = text.split("?")[0]
+            elif name == "lastmod" and text and published is None:
+                published = _iso_when(text)
+        if link:
+            entries.append((_title_from_slug(link), link, published))
+    return entries
+
+
+def polish_headline(deal: Deal) -> Deal | None:
+    """Open an NDTV article for its real headline. None means the page is not a deal."""
+    if deal.source != "NDTV Profit":
+        return deal
+    try:
+        request = urllib.request.Request(deal.url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(request, timeout=8) as response:
+            page = response.read(250_000).decode("utf-8", "replace")
+    except Exception:
+        return deal
+    title = _meta(page, "og:title") or _meta(page, "twitter:title")
+    if title:
+        title = re.sub(r"\s+[|\-–—]\s+NDTV Profit\s*$", "", title).strip()
+    headline = title or deal.company
+    kind = classify_press(headline)
+    if not kind or not _indian_issue(headline, kind):
+        return None
+    when = _iso_when(_meta(page, "article:published_time"))
+    return dataclasses.replace(deal, kind=kind, company=headline, published=when or deal.published)
+
+
+def _meta(page: str, prop: str) -> str:
+    patterns = (
+        rf'<meta[^>]+(?:property|name)="{re.escape(prop)}"[^>]+content="([^"]*)"',
+        rf'<meta[^>]+content="([^"]*)"[^>]+(?:property|name)="{re.escape(prop)}"',
+    )
+    for pattern in patterns:
+        match = re.search(pattern, page, re.IGNORECASE)
+        if match:
+            return _text_value(match.group(1))
+    return ""
 
 
 def _sitemap_entries(payload: bytes) -> list[tuple[str, str, datetime.datetime | None]]:

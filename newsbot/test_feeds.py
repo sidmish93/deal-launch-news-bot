@@ -35,6 +35,28 @@ class SitemapTests(unittest.TestCase):
         self.assertEqual(classify_press(title), "Preferential")
         self.assertIsNone(classify_press(entries[1][0]))
 
+    def test_ndtv_sitemap_uses_the_article_url_not_the_image(self):
+        payload = """<?xml version="1.0"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+          <url>
+            <loc>https://www.ndtvprofit.com/business/urban-company-raises-rs-2-500-cr-via-qip-12353026</loc>
+            <image:image><image:loc>https://c.ndtvimg.com/photo.jpg</image:loc></image:image>
+            <lastmod><![CDATA[ 2026-11-20T05:10:00+05:30 ]]></lastmod>
+          </url>
+        </urlset>
+        """
+        from newsbot.feeds import _indian_issue, _listed_entries, _title_from_slug
+        entries = _listed_entries(payload.encode())
+        self.assertEqual(len(entries), 1)
+        title, link, published = entries[0]
+        self.assertEqual(title, _title_from_slug(link))
+        self.assertTrue(link.endswith("12353026"))
+        self.assertEqual(published, datetime.datetime.fromisoformat("2026-11-20T05:10:00+05:30"))
+        kind = classify_press(title)
+        self.assertEqual(kind, "QIP")
+        self.assertTrue(_indian_issue(title, kind))
+
 
 if __name__ == "__main__":
     unittest.main()

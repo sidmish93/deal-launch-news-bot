@@ -17,7 +17,7 @@ import time
 import urllib.error
 import urllib.request
 
-from newsbot.feeds import IST, Deal, press_deals
+from newsbot.feeds import IST, Deal, polish_headline, press_deals
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_PATH = os.path.join(ROOT, "newsbot", "state", "deals.json")
@@ -104,9 +104,14 @@ def _replay_day(token: str, state: dict, day: str) -> None:
         if deal.published and deal.published.astimezone(IST).date() == wanted
     ]
     deals.sort(key=lambda deal: deal.published or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+    sent = 0
     for deal in deals:
-        _broadcast(token, state, deal.format())
-    print(f"replay {wanted.isoformat()}: {len(deals)} deals, {len(state['chats'])} chats", flush=True)
+        polished = polish_headline(deal)
+        if polished is None:
+            continue
+        _broadcast(token, state, polished.format())
+        sent += 1
+    print(f"replay {wanted.isoformat()}: {sent} deals, {len(state['chats'])} chats", flush=True)
 
 
 def _poll(token: str, state: dict) -> None:
@@ -131,7 +136,10 @@ def _poll(token: str, state: dict) -> None:
         to_send = fresh
         state["seen"] = _trim(state["seen"] + [d.id for d in fresh])
     for deal in to_send:
-        text = deal.format()
+        polished = polish_headline(deal)
+        if polished is None:
+            continue
+        text = polished.format()
         _broadcast(token, state, text)
         state["recent"].append({"text": text, "id": deal.id})
     state["recent"] = state["recent"][-30:]
@@ -143,7 +151,7 @@ def _fetch() -> list[Deal]:
     errors = []
     for loader in (press_deals,):
         try:
-            deals.extend(_within(loader, 70))
+            deals.extend(_within(loader, 100))
         except Exception as exc:
             errors.append(f"{loader.__name__}: {exc}")
     if errors and not deals:
