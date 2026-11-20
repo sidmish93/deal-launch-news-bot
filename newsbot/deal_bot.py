@@ -17,7 +17,7 @@ import time
 import urllib.error
 import urllib.request
 
-from newsbot.feeds import Deal, press_deals
+from newsbot.feeds import IST, Deal, press_deals
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_PATH = os.path.join(ROOT, "newsbot", "state", "deals.json")
@@ -38,6 +38,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true", help="poll feeds once and exit")
     parser.add_argument("--dry-run", action="store_true", help="print matches, send nothing")
+    parser.add_argument("--day", default="", help="resend one IST day, YYYY-MM-DD, without changing seen")
     args = parser.parse_args()
     token = _load_token()
     if args.dry_run:
@@ -45,6 +46,9 @@ def main() -> None:
         return
     state = _load_state()
     _ensure_env_chat(state)
+    if args.day:
+        _replay_day(token, state, args.day)
+        return
     if args.once:
         _poll(token, state)
         _save_state(state)
@@ -78,6 +82,23 @@ def _print_deals() -> None:
     for deal in recent[:BACKFILL_CAP]:
         print("---")
         print(deal.format())
+
+
+def _replay_day(token: str, state: dict, day: str) -> None:
+    """Send one day's headlines again. The seen list stays as it is."""
+    try:
+        wanted = datetime.date.fromisoformat(day)
+    except ValueError:
+        sys.exit("day must be YYYY-MM-DD")
+    deals = [
+        deal
+        for deal in _fetch()
+        if deal.published and deal.published.astimezone(IST).date() == wanted
+    ]
+    deals.sort(key=lambda deal: deal.published or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+    for deal in deals:
+        _broadcast(token, state, deal.format())
+    print(f"replay {wanted.isoformat()}: {len(deals)} deals, {len(state['chats'])} chats", flush=True)
 
 
 def _poll(token: str, state: dict) -> None:

@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
   workflow_dispatch:
+    inputs:
+      day:
+        description: "Resend one IST day (YYYY-MM-DD). Empty runs a normal poll."
+        required: false
+        default: ""
 
 concurrency:
   group: deal-news
@@ -30,7 +35,13 @@ jobs:
         env:
           DEAL_BOT_TOKEN: ${{ secrets.DEAL_BOT_TOKEN }}
           DEAL_CHAT_ID: ${{ secrets.DEAL_CHAT_ID }}
-        run: python -m newsbot.deal_bot --once
+          REPLAY_DAY: ${{ github.event_name == 'workflow_dispatch' && inputs.day || '' }}
+        run: |
+          if [ -n "$REPLAY_DAY" ]; then
+            python -m newsbot.deal_bot --day "$REPLAY_DAY"
+          else
+            python -m newsbot.deal_bot --once
+          fi
 
       # Each run is a fresh machine. The seen-list has to come back with the
       # repository or the next run would send the same filings again. The
