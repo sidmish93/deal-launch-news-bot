@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.request
 
+from newsbot.docs import MAX_BYTES, is_zip_url, unzip
 from newsbot.feeds import Deal, nse_deals, press_deals
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -102,8 +103,8 @@ def _poll(token: str, state: dict) -> None:
         to_send = fresh
         state["seen"] = _trim(state["seen"] + [d.id for d in fresh])
     for deal in to_send:
-        _broadcast(token, state, deal.format())
-        state["recent"].append({"text": deal.format(), "id": deal.id})
+        text = _deliver_deal(token, state, deal)
+        state["recent"].append({"text": text, "id": deal.id})
     state["recent"] = state["recent"][-30:]
     print(f"{len(to_send)} new deals, {len(state['chats'])} chats", flush=True)
 
@@ -200,6 +201,51 @@ def _add_chat(token: str, state: dict, chat_id: int, welcome: bool = True) -> No
         print(f"delivered {len(state['recent'][-20:])} to {chat_id}", flush=True)
 
 
+def _deliver_deal(token: str, state: dict, deal: Deal) -> str:
+    files, skipped = _open_zip(deal.url)
+    text = deal.format(include_url=not files or skipped > 0)
+    for chat_id in list(state["chats"]):
+        try:
+            _send(token, chat_id, text)
+            for name, data in files:
+                _send_file(token, chat_id, name, data)
+        except RuntimeError as exc:
+            print(f"send to {chat_id} failed: {_redact(exc, token)}", flush=True)
+    return text
+
+
+def _open_zip(url: str) -> tuple[list[tuple[str, bytes]], int]:
+    if not is_zip_url(url):
+        return [], 0
+    try:
+        opened = unzip(_download(url, MAX_BYTES))
+    except Exception as exc:
+        print("zip skipped: " + str(exc), flush=True)
+        return [], 0
+    if opened.files:
+        print(f"unzipped {len(opened.files)} file(s)", flush=True)
+    return opened.files, opened.skipped
+
+
+def _download(url: str, limit: int) -> bytes:
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(request, timeout=45) as response:
+        length = response.headers.get("Content-Length")
+        if length and length.isdigit() and int(length) > limit:
+            raise ValueError("zip is too large to attach")
+        chunks = []
+        total = 0
+        while True:
+            block = response.read(65536)
+            if not block:
+                break
+            total += len(block)
+            if total > limit:
+                raise ValueError("zip is too large to attach")
+            chunks.append(block)
+    return b"".join(chunks)
+
+
 def _broadcast(token: str, state: dict, text: str) -> None:
     for chat_id in list(state["chats"]):
         try:
@@ -255,10 +301,39 @@ def _send(token: str, chat_id: int, text: str) -> None:
     time.sleep(0.4)
 
 
-def _api(token: str, method: str, payload: dict | None = None, timeout: int = 30):
+def _send_file(token: str, chat_id: int, filename: str, data: bytes) -> None:
+    body, content_type = _document_form(chat_id, filename, data)
+    _api(token, "sendDocument", data=body, headers={"Content-Type": content_type}, timeout=90)
+    time.sleep(0.4)
+
+
+def _document_form(chat_id: int, filename: str, data: bytes) -> tuple[bytes, str]:
+    boundary = "----DealBotBoundary7f3a9c"
+    kind = "application/pdf" if filename.lower().endswith(".pdf") else "application/octet-stream"
+    head = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+        f"{chat_id}\r\n"
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="document"; filename="{filename}"\r\n'
+        f"Content-Type: {kind}\r\n\r\n"
+    ).encode()
+    tail = f"\r\n--{boundary}--\r\n".encode()
+    return head + data + tail, f"multipart/form-data; boundary={boundary}"
+
+
+def _api(
+    token: str,
+    method: str,
+    payload: dict | None = None,
+    timeout: int = 30,
+    data: bytes | None = None,
+    headers: dict | None = None,
+):
     url = f"https://api.telegram.org/bot{token}/{method}"
-    data = None if payload is None else json.dumps(payload).encode()
-    headers = {"Content-Type": "application/json"} if data else {}
+    if data is None:
+        data = None if payload is None else json.dumps(payload).encode()
+        headers = {"Content-Type": "application/json"} if data else {}
     last = "no response"
     for attempt in range(5):
         request = urllib.request.Request(url, data=data, headers=headers)
