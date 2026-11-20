@@ -1,11 +1,11 @@
 name: ECM news
 
 # ECM headlines run all week. Five minutes is the shortest interval GitHub
-# Actions will run. The scheduler can still start late or drop a run, and a
-# public repository is not billed for the minutes. A quiet run finishes quickly.
+# Actions will run. The minutes avoid :00, when GitHub is most likely to drop
+# a scheduled run. A public repository is not billed for the minutes.
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
   workflow_dispatch:
 
 concurrency:
