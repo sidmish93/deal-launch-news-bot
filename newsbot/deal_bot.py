@@ -353,6 +353,8 @@ def _deliver_pending(token: str, state: dict) -> None:
 
 
 def _add_chat(token: str, state: dict, chat_id: int, welcome: bool = True) -> None:
+    if chat_id >= 0:
+        return
     if chat_id not in state["chats"]:
         state["chats"].append(chat_id)
         print(f"chat {chat_id}", flush=True)
@@ -365,6 +367,7 @@ def _add_chat(token: str, state: dict, chat_id: int, welcome: bool = True) -> No
 
 
 def _broadcast(token: str, state: dict, text: str) -> None:
+    _groups_only(state)
     for chat_id in list(state["chats"]):
         if chat_id not in state["chats"]:
             continue
@@ -481,11 +484,20 @@ def _load_token() -> str:
     return token
 
 
+def _groups_only(state: dict) -> None:
+    """Personal chats stay off the list. Delivery is the group only."""
+    state["chats"] = [chat_id for chat_id in state.get("chats", []) if isinstance(chat_id, int) and chat_id < 0]
+    state["welcomed"] = [chat_id for chat_id in state.get("welcomed", []) if isinstance(chat_id, int) and chat_id < 0]
+
+
 def _ensure_env_chat(state: dict) -> None:
+    _groups_only(state)
     raw = os.environ.get("DEAL_CHAT_ID", "").strip()
     if not raw:
         return
     chat_id = int(raw)
+    if chat_id >= 0:
+        return
     if chat_id not in state["chats"]:
         state["chats"].append(chat_id)
     if chat_id not in state["welcomed"]:

@@ -1,6 +1,7 @@
+import os
 import unittest
 
-from newsbot.deal_bot import _apply_group_event, _group_event, _migrated_chat_id, _replace_chat
+from newsbot.deal_bot import _apply_group_event, _ensure_env_chat, _group_event, _groups_only, _migrated_chat_id, _replace_chat
 
 
 def _join(chat_id: int, status: str = "administrator") -> dict:
@@ -46,3 +47,22 @@ class GroupEventTests(unittest.TestCase):
         _replace_chat(state, -5577503059, -1004356514851)
         self.assertEqual(state["chats"], [1927167176, -1004356514851])
         self.assertEqual(state["welcomed"], [1927167176, -1004356514851])
+
+    def test_personal_chat_is_removed(self):
+        state = {"chats": [1927167176, -1004356514851], "welcomed": [1927167176, -1004356514851]}
+        _groups_only(state)
+        self.assertEqual(state["chats"], [-1004356514851])
+        self.assertEqual(state["welcomed"], [-1004356514851])
+
+    def test_personal_secret_is_not_restored(self):
+        state = {"chats": [-1004356514851], "welcomed": [-1004356514851]}
+        previous = os.environ.get("DEAL_CHAT_ID")
+        os.environ["DEAL_CHAT_ID"] = "1927167176"
+        try:
+            _ensure_env_chat(state)
+        finally:
+            if previous is None:
+                os.environ.pop("DEAL_CHAT_ID", None)
+            else:
+                os.environ["DEAL_CHAT_ID"] = previous
+        self.assertEqual(state["chats"], [-1004356514851])
