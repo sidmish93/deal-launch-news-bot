@@ -1,6 +1,6 @@
 import unittest
 
-from newsbot.deal_bot import _apply_group_event, _group_event
+from newsbot.deal_bot import _apply_group_event, _group_event, _migrated_chat_id, _replace_chat
 
 
 def _join(chat_id: int, status: str = "administrator") -> dict:
@@ -36,3 +36,13 @@ class GroupEventTests(unittest.TestCase):
         self.assertEqual(_apply_group_event(state, event), "removed")
         self.assertEqual(state["chats"], [1927167176])
         self.assertEqual(state["welcomed"], [1927167176])
+
+    def test_an_upgraded_group_keeps_one_id(self):
+        exc = RuntimeError(
+            'sendMessage 400 {"parameters":{"migrate_to_chat_id":-1004356514851}}'
+        )
+        self.assertEqual(_migrated_chat_id(exc), -1004356514851)
+        state = {"chats": [1927167176, -5577503059, -1004356514851], "welcomed": [1927167176, -5577503059]}
+        _replace_chat(state, -5577503059, -1004356514851)
+        self.assertEqual(state["chats"], [1927167176, -1004356514851])
+        self.assertEqual(state["welcomed"], [1927167176, -1004356514851])

@@ -252,8 +252,72 @@ def _apply_group_event(state: dict, event: tuple[str, int]) -> str:
     return "removed" if removed else "kept"
 
 
+def _migrated_chat_id(exc: BaseException) -> int | None:
+    text = str(exc)
+    key = '"migrate_to_chat_id":'
+    start = text.find(key)
+    if start < 0:
+        return None
+    raw = []
+    for char in text[start + len(key):].lstrip():
+        if char == "-" or char.isdigit():
+            raw.append(char)
+        else:
+            break
+    if not raw or raw == ["-"]:
+        return None
+    return int("".join(raw))
+
+
+def _replace_chat(state: dict, old_id: int, new_id: int) -> None:
+    def swap(items: list) -> list:
+        result = []
+        for item in items:
+            item = new_id if item == old_id else item
+            if item not in result:
+                result.append(item)
+        return result
+
+    state["chats"] = swap(state.get("chats", []))
+    state["welcomed"] = swap(state.get("welcomed", []))
+
+
+def _note_group(token: str, state: dict, chat_id: int, note: str) -> None:
+    print(f"group {chat_id}", flush=True)
+    try:
+        _send(token, chat_id, note)
+    except RuntimeError as exc:
+        moved = _migrated_chat_id(exc)
+        if moved is None:
+            print(f"send to {chat_id} failed: {_redact(exc, token)}", flush=True)
+            return
+        already = moved in state["chats"]
+        _replace_chat(state, chat_id, moved)
+        print(f"group {chat_id} moved to {moved}", flush=True)
+        if already:
+            return
+        try:
+            _send(token, moved, note)
+        except RuntimeError as exc2:
+            print(f"send to {moved} failed: {_redact(exc2, token)}", flush=True)
+
+
+def _settle_groups(token: str, state: dict) -> None:
+    """Drop a basic group id after Telegram upgrades that group to a supergroup."""
+    for chat_id in list(state["chats"]):
+        try:
+            _api(token, "getChat", {"chat_id": chat_id})
+        except RuntimeError as exc:
+            moved = _migrated_chat_id(exc)
+            if moved is None:
+                continue
+            _replace_chat(state, chat_id, moved)
+            print(f"group {chat_id} moved to {moved}", flush=True)
+
+
 def _learn_groups(token: str, state: dict, note: str) -> None:
     """Remember a group the bot was added to, without replaying old headlines."""
+    _settle_groups(token, state)
     for _ in range(10):
         updates = _api(
             token,
@@ -274,11 +338,7 @@ def _learn_groups(token: str, state: dict, note: str) -> None:
                 continue
             result = _apply_group_event(state, event)
             if result == "added":
-                print(f"group {event[1]}", flush=True)
-                try:
-                    _send(token, event[1], note)
-                except RuntimeError as exc:
-                    print(f"send to {event[1]} failed: {_redact(exc, token)}", flush=True)
+                _note_group(token, state, event[1], note)
             elif result == "removed":
                 print(f"left {event[1]}", flush=True)
 
@@ -303,10 +363,21 @@ def _add_chat(token: str, state: dict, chat_id: int, welcome: bool = True) -> No
 
 def _broadcast(token: str, state: dict, text: str) -> None:
     for chat_id in list(state["chats"]):
+        target = chat_id
         try:
-            _send(token, chat_id, text)
+            _send(token, target, text)
         except RuntimeError as exc:
-            print(f"send to {chat_id} failed: {_redact(exc, token)}", flush=True)
+            moved = _migrated_chat_id(exc)
+            if moved is None:
+                print(f"send to {chat_id} failed: {_redact(exc, token)}", flush=True)
+                continue
+            _replace_chat(state, chat_id, moved)
+            target = moved
+            print(f"group {chat_id} moved to {moved}", flush=True)
+            try:
+                _send(token, target, text)
+            except RuntimeError as exc2:
+                print(f"send to {moved} failed: {_redact(exc2, token)}", flush=True)
 
 
 def _configure_bot(token: str) -> None:
