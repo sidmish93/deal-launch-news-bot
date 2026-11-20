@@ -56,9 +56,12 @@ class Deal:
     published: datetime.datetime | None
 
     def format(self, include_url: bool = True) -> str:
-        lines = [f"{self.kind} · {self.company}", f"{self.source} · {self.summary}"]
+        lines = [self.company]
         if self.published:
-            lines.append(self.published.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST"))
+            when = self.published.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
+            lines.append(f"{self.source} | {when}")
+        else:
+            lines.append(self.source)
         if include_url and self.url:
             lines.append(self.url)
         return "\n".join(lines)

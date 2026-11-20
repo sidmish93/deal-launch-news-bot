@@ -1,6 +1,7 @@
+import datetime
 import unittest
 
-from newsbot.feeds import _indian_issue, classify, classify_press, direct_url
+from newsbot.feeds import Deal, _indian_issue, classify, classify_press, direct_url
 
 
 class ClassifyTests(unittest.TestCase):
@@ -42,6 +43,24 @@ class ClassifyTests(unittest.TestCase):
             "https%3a%2f%2fwww.cnbctv18.com%2fmarket%2fstory.htm&c=1"
         )
         self.assertEqual(direct_url(link), "https://www.cnbctv18.com/market/story.htm")
+
+    def test_message_is_headline_source_time_and_link(self):
+        published = datetime.datetime(2026, 11, 19, 18, 15, tzinfo=datetime.timezone.utc)
+        deal = Deal(
+            id="press:https://www.moneycontrol.com/news/story",
+            kind="IPO",
+            company="SEBI chairman bats for 2,000 more listings, pre-IPO framework",
+            summary="SEBI is separately reviewing the ICDR framework",
+            source="Moneycontrol",
+            url="https://www.moneycontrol.com/news/story",
+            published=published,
+        )
+        self.assertEqual(
+            deal.format(),
+            "SEBI chairman bats for 2,000 more listings, pre-IPO framework\n"
+            "Moneycontrol | 19 Nov 2026, 11:45 PM IST\n"
+            "https://www.moneycontrol.com/news/story",
+        )
 
     def test_press_skips_grey_market(self):
         self.assertIsNone(classify_press("Acme IPO grey market premium rises"))
