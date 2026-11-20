@@ -1,4 +1,4 @@
-"""ECM deal items from NSE filings and a short list of newspapers."""
+"""ECM headlines from the six publications used by blocks_tracker."""
 
 from __future__ import annotations
 
@@ -13,8 +13,22 @@ from dataclasses import dataclass
 
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
-NSE_ANNOUNCEMENTS = "https://nsearchives.nseindia.com/content/RSS/Online_announcements.xml"
-NSE_OFFER_DOCS = "https://nsearchives.nseindia.com/content/RSS/Offer_Documents.xml"
+# Same publications blocks_tracker searches, one feed each so one site cannot crowd out the rest.
+SOURCES = (
+    ("CNBC TV18", "cnbctv18.com"),
+    ("Moneycontrol", "moneycontrol.com"),
+    ("NDTV Profit", "ndtvprofit.com"),
+    ("Economic Times", "economictimes.indiatimes.com"),
+    ("Business Standard", "business-standard.com"),
+    ("Mint", "livemint.com"),
+)
+
+QUERY = (
+    '"block deal" OR "bulk deal" OR QIP OR "qualified institutional placement" '
+    'OR "rights issue" OR "preferential issue" OR "preferential allotment" '
+    'OR "offer for sale" OR "follow-on public" OR FPO OR IPO OR DRHP OR UDRHP '
+    'OR RHP OR buyback OR "buy-back"'
+)
 
 PRESS_SKIP = (
     "grey market",
@@ -28,7 +42,6 @@ PRESS_SKIP = (
     "allotment status",
 )
 
-_TAG = re.compile(r"<[^>]+>")
 _SPACE = re.compile(r"\s+")
 
 
@@ -106,128 +119,77 @@ def classify_press(title: str) -> str | None:
     return None
 
 
-def nse_deals() -> list[Deal]:
-    deals = _nse_announcements()
-    deals.extend(_nse_offer_docs())
-    return deals
+def _indian_issue(title: str, kind: str) -> bool:
+    """A bare IPO headline has to be an Indian issue. QIP, blocks, and rights already are."""
+    if kind != "IPO":
+        return True
+    low = (title or "").lower()
+    markers = (
+        "crore", "₹", " rs", "sebi", "nse", "bse", "drhp", "udrhp", "rhp",
+        "ipo papers", "ipo to open", "files ", "filing", "price band",
+        "fresh issue", "offer for sale",
+    )
+    return any(marker in low for marker in markers)
 
 
-def _credible(url: str) -> bool:
+def direct_url(link: str) -> str:
+    """Bing wraps the article in a click tracker. The publisher URL is in the query."""
+    parsed = urllib.parse.urlparse(link or "")
+    if "bing.com" not in parsed.netloc.lower():
+        return link
+    target = urllib.parse.parse_qs(parsed.query).get("url", [""])[0]
+    return target or link
+
+
+def _on_source(url: str, domain: str) -> bool:
     host = urllib.parse.urlparse(url).netloc.lower()
     if host.startswith("www."):
         host = host[4:]
-    allowed = {
-        "economictimes.indiatimes.com",
-        "m.economictimes.indiatimes.com",
-        "livemint.com",
-        "business-standard.com",
-        "moneycontrol.com",
-        "reuters.com",
-    }
-    return host in allowed
+    return host == domain or host.endswith("." + domain)
 
 
 def press_deals() -> list[Deal]:
-    query = (
-        '"qualified institutional placement" OR QIP OR "block deal" OR "bulk deal" '
-        'OR "offer for sale" OR "preferential issue" OR "rights issue" '
-        'OR "initial public offering" OR DRHP OR "IPO opens" when:1d'
-    )
-    url = (
-        "https://news.google.com/rss/search?q="
-        + urllib.parse.quote(query)
-        + "&hl=en-IN&gl=IN&ceid=IN:en"
-    )
     deals = []
-    for item in _items(url):
-        source_el = item.find("source")
-        source_url = (source_el.get("url") if source_el is not None else "") or ""
-        source_name = _text(source_el)
-        if not _credible(source_url):
+    seen = set()
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=36)
+    for label, domain in SOURCES:
+        try:
+            items = _items(_search_url(domain))
+        except Exception as exc:
+            print(f"feed skipped: {label}: {exc}", flush=True)
             continue
-        title = _text(item.find("title"))
-        title = re.sub(r"\s+-\s+" + re.escape(source_name) + r"$", "", title).strip()
-        kind = classify_press(title)
-        if not kind:
-            continue
-        link = _text(item.find("link")) or _text(item.find("guid"))
-        deals.append(
-            Deal(
-                id="press:" + (link or title),
-                kind=kind,
-                company=title,
-                summary=source_name or "Press",
-                source="Press",
-                url=link,
-                published=_when(item),
+        for item in items:
+            title = _text(item.find("title"))
+            kind = classify_press(title)
+            if not kind or not _indian_issue(title, kind):
+                continue
+            published = _when(item)
+            if published is None or published < cutoff:
+                continue
+            link = direct_url(_text(item.find("link")) or _text(item.find("guid")))
+            if not link or not _on_source(link, domain):
+                continue
+            if link in seen:
+                continue
+            seen.add(link)
+            description = _text(item.find("description"))
+            deals.append(
+                Deal(
+                    id="press:" + link,
+                    kind=kind,
+                    company=title,
+                    summary=description[:300] or label,
+                    source=label,
+                    url=link,
+                    published=published,
+                )
             )
-        )
     return deals
 
 
-def _nse_announcements() -> list[Deal]:
-    deals = []
-    for item in _items(NSE_ANNOUNCEMENTS):
-        company = _text(item.find("title"))
-        desc = _plain(item.find("description"))
-        kind = classify(company + " " + desc)
-        if not kind:
-            continue
-        summary = desc.split("|SUBJECT:")[0].strip()
-        summary = re.sub(r"^" + re.escape(company) + r"\s+has informed the Exchange (about|regarding)\s+", "", summary, flags=re.I)
-        summary = summary.strip(" '\".").strip()
-        if summary[:1].islower():
-            summary = summary[:1].upper() + summary[1:]
-        link = _text(item.find("link")) or _text(item.find("guid"))
-        deals.append(
-            Deal(
-                id="nse:" + (_text(item.find("guid")) or link or summary),
-                kind=kind,
-                company=company or "NSE filing",
-                summary=summary[:300] or kind,
-                source="NSE filing",
-                url=link,
-                published=_when(item),
-            )
-        )
-    return deals
-
-
-def _nse_offer_docs() -> list[Deal]:
-    deals = []
-    for item in _items(NSE_OFFER_DOCS):
-        company = _text(item.find("title"))
-        desc = _plain(item.find("description"))
-        low = desc.lower()
-        if not company:
-            continue
-        if "disclosure document" in low or "commercial paper" in low:
-            continue
-        kind = prospectus_kind(low + " " + (_text(item.find("link")) or ""))
-        if kind is None and not any(word in low for word in ("ipo", "fpo")):
-            continue
-        summary = {
-            "UDRHP": "Filed a UDRHP",
-            "DRHP": "Filed a DRHP",
-            "RHP": "Filed an RHP",
-        }.get(kind, "Filed for an IPO")
-        link = _text(item.find("link")) or _text(item.find("guid"))
-        deals.append(
-            Deal(
-                id="offer:" + (_text(item.find("guid")) or link or company or desc),
-                kind=kind or classify(company + " " + desc) or "IPO",
-                company=company,
-                summary=summary,
-                source="NSE offer document",
-                url=link,
-                published=_when(item),
-            )
-        )
-    specific = {deal.company for deal in deals if deal.summary != "Filed for an IPO"}
-    return [
-        deal for deal in deals
-        if deal.summary != "Filed for an IPO" or deal.company not in specific
-    ]
+def _search_url(domain: str) -> str:
+    query = urllib.parse.quote(f"({QUERY}) site:{domain}")
+    return "https://www.bing.com/news/search?q=" + query + "&format=RSS&sortbydate=1&setlang=en-IN"
 
 
 def _items(url: str) -> list[ET.Element]:
@@ -241,13 +203,6 @@ def _text(node: ET.Element | None) -> str:
     if node is None or node.text is None:
         return ""
     return _SPACE.sub(" ", html.unescape(node.text)).strip()
-
-
-def _plain(node: ET.Element | None) -> str:
-    raw = node.text if node is not None and node.text else ""
-    if node is not None and not raw:
-        raw = "".join(node.itertext())
-    return _SPACE.sub(" ", html.unescape(_TAG.sub(" ", raw))).strip()
 
 
 def _when(item: ET.Element) -> datetime.datetime | None:

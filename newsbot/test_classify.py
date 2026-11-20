@@ -1,6 +1,6 @@
 import unittest
 
-from newsbot.feeds import classify, classify_press
+from newsbot.feeds import _indian_issue, classify, classify_press, direct_url
 
 
 class ClassifyTests(unittest.TestCase):
@@ -30,6 +30,18 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(classify("Acme Limited has filled DP_DRHP for its IPO"), "DRHP")
         self.assertEqual(classify("Acme has filed a UDRHP with SEBI"), "UDRHP")
         self.assertEqual(classify("filed the Draft Red Herring Prospectus with SEBI"), "DRHP")
+
+    def test_foreign_ipo_is_not_an_indian_issue(self):
+        self.assertFalse(_indian_issue("Anthropic IPO debuts on Nasdaq", "IPO"))
+        self.assertTrue(_indian_issue("NLC India Renewables files draft IPO papers", "IPO"))
+        self.assertTrue(_indian_issue("Urban Company raises Rs 2,500 crore through QIP", "QIP"))
+
+    def test_bing_tracker_url(self):
+        link = (
+            "http://www.bing.com/news/apiclick.aspx?ref=FexRss&url="
+            "https%3a%2f%2fwww.cnbctv18.com%2fmarket%2fstory.htm&c=1"
+        )
+        self.assertEqual(direct_url(link), "https://www.cnbctv18.com/market/story.htm")
 
     def test_press_skips_grey_market(self):
         self.assertIsNone(classify_press("Acme IPO grey market premium rises"))
