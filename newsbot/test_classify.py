@@ -37,6 +37,36 @@ class ClassifyTests(unittest.TestCase):
         self.assertTrue(_indian_issue("NLC India Renewables files draft IPO papers", "IPO"))
         self.assertTrue(_indian_issue("Urban Company raises Rs 2,500 crore through QIP", "QIP"))
 
+    def test_whole_paper_headlines_that_only_mention_a_deal(self):
+        def kept(title: str) -> str | None:
+            kind = classify_press(title)
+            if not kind or not _indian_issue(title, kind):
+                return None
+            return kind
+
+        self.assertIsNone(kept(
+            "GIFT Nifty down, signals cautious start for Sensex, Nifty despite Anthropic IPO boost"
+        ))
+        self.assertIsNone(kept(
+            "Anthropic IPO windfall: More than 400 employees could be worth over ₹935 crore each"
+        ))
+        self.assertIsNone(kept("Anthropic IPO raises $107.3 billion, surpassing SpaceX's record debut"))
+        self.assertIsNone(kept(
+            "Anthropic IPO document filed with US Securities and Exchange Commission warns of AI risk"
+        ))
+        self.assertIsNone(kept(
+            "India to have preferential trade access to global GDP, says Piyush Goyal"
+        ))
+        self.assertIsNone(kept(
+            "SEBI chairman bats for 2,000 more listings, pre-IPO framework"
+        ))
+        self.assertEqual(kept("Mahanadi Coalfields ₹8,981 cr IPO opens today: Price, lot size, dates"), "IPO")
+        self.assertEqual(
+            kept("Zelio E-Mobility gets BSE nod for ₹168 crore preferential issue, warrants"),
+            "Preferential",
+        )
+        self.assertEqual(kept("Integris Medtech to launch Rs 3,000-crore IPO next week"), "IPO")
+
     def test_bing_tracker_url(self):
         link = (
             "http://www.bing.com/news/apiclick.aspx?ref=FexRss&url="

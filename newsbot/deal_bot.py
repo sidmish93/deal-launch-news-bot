@@ -143,7 +143,7 @@ def _fetch() -> list[Deal]:
     errors = []
     for loader in (press_deals,):
         try:
-            deals.extend(_within(loader, 25))
+            deals.extend(_within(loader, 70))
         except Exception as exc:
             errors.append(f"{loader.__name__}: {exc}")
     if errors and not deals:

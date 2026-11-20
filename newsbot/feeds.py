@@ -1,4 +1,9 @@
-"""ECM headlines from the six publications used by blocks_tracker."""
+"""ECM headlines from the six publications' own news sitemaps.
+
+Bing's news search only returns a short, unstable list, so a story could be
+published in the morning and stay invisible until that list happened to
+include it. Each paper's sitemap is the list of what it actually published.
+"""
 
 from __future__ import annotations
 
@@ -9,25 +14,44 @@ import re
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
-# Same publications blocks_tracker searches, one feed each so one site cannot crowd out the rest.
+# Publisher sitemaps, not a search engine's short list. Economic Times verticals
+# such as ET Auto are not in the main sitemap, and NDTV Profit blocks its own
+# sitemap, so those two also use a narrow Bing query per deal type.
 SOURCES = (
-    ("CNBC TV18", "cnbctv18.com"),
-    ("Moneycontrol", "moneycontrol.com"),
-    ("NDTV Profit", "ndtvprofit.com"),
-    ("Economic Times", "economictimes.indiatimes.com"),
-    ("Business Standard", "business-standard.com"),
-    ("Mint", "livemint.com"),
+    ("CNBC TV18", "cnbctv18.com", ("https://www.cnbctv18.com/commonfeeds/v1/cne/sitemap/google-news.xml",), False),
+    ("Moneycontrol", "moneycontrol.com", ("https://www.moneycontrol.com/news/news-sitemap.xml",), False),
+    ("NDTV Profit", "ndtvprofit.com", (), True),
+    (
+        "Economic Times",
+        "economictimes.indiatimes.com",
+        (
+            "https://economictimes.indiatimes.com/etstatic/sitemaps/et/news/sitemap-today.xml",
+            "https://economictimes.indiatimes.com/etstatic/sitemaps/et/news/sitemap-yesterday.xml",
+        ),
+        True,
+    ),
+    ("Business Standard", "business-standard.com", ("https://www.business-standard.com/sitemap/news-sitemap.xml",), False),
+    (
+        "Mint",
+        "livemint.com",
+        (
+            "https://www.livemint.com/sitemap/today.xml",
+            "https://www.livemint.com/sitemap/yesterday.xml",
+        ),
+        False,
+    ),
 )
 
-QUERY = (
-    '"block deal" OR "bulk deal" OR QIP OR "qualified institutional placement" '
-    'OR "rights issue" OR "preferential issue" OR "preferential allotment" '
-    'OR "offer for sale" OR "follow-on public" OR FPO OR IPO OR DRHP OR UDRHP '
-    'OR RHP OR buyback OR "buy-back"'
+BING_QUERIES = (
+    'IPO OR DRHP OR UDRHP OR RHP OR FPO OR "initial public offer"',
+    'QIP OR "qualified institutional placement"',
+    '"preferential issue" OR "preferential allotment" OR "rights issue" OR buyback OR "buy-back"',
+    '"block deal" OR "bulk deal" OR "offer for sale"',
 )
 
 PRESS_SKIP = (
@@ -95,7 +119,7 @@ def classify(text: str) -> str | None:
         return "OFS"
     if "rights issue" in low or "right issue" in low:
         return "Rights"
-    if "preferential" in low:
+    if "preferential issue" in low or "preferential allotment" in low or "preferential basis" in low:
         return "Preferential"
     if "buy-back" in low or "buyback" in low or "buy back" in low:
         return "Buyback"
@@ -127,12 +151,21 @@ def _indian_issue(title: str, kind: str) -> bool:
     if kind != "IPO":
         return True
     low = (title or "").lower()
-    markers = (
-        "crore", "₹", " rs", "sebi", "nse", "bse", "drhp", "udrhp", "rhp",
-        "ipo papers", "ipo to open", "files ", "filing", "price band",
-        "fresh issue", "offer for sale",
-    )
-    return any(marker in low for marker in markers)
+    if re.search(r"\b(nasdaq|nyse)\b", low) or "wall street" in low:
+        return False
+    indian_money = "crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low)
+    if "$" in (title or "") and not indian_money:
+        return False
+    if "securities and exchange commission" in low and "sebi" not in low:
+        return False
+    # The sitemap is the whole paper, so a rupee figure or the letters "nse"
+    # inside "Sensex" is not enough. The headline has to be the issue itself.
+    return any(re.search(pattern, low) for pattern in (
+        r"\bfiles\b", r"\bfiling\b", r"\bfiled\b", r"ipo papers",
+        r"\bto launch\b", r"\blaunches\b", r"\bto raise\b", r"\braises\b", r"\braising\b",
+        r"fresh issue", r"offer for sale", r"price band", r"\bto open\b", r"\bopens\b",
+        r"ipo size", r"\btrims\b", r"\bhalves\b", r"\bcuts\b",
+    ))
 
 
 def direct_url(link: str) -> str:
@@ -152,60 +185,135 @@ def _on_source(url: str, domain: str) -> bool:
 
 
 def press_deals() -> list[Deal]:
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=36)
+    found: list[list[Deal]] = []
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = [pool.submit(_source_deals, source, cutoff) for source in SOURCES]
+        for future in futures:
+            found.append(future.result())
     deals = []
     seen = set()
-    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=36)
-    for label, domain in SOURCES:
-        try:
-            items = _items(_search_url(domain))
-        except Exception as exc:
-            print(f"feed skipped: {label}: {exc}", flush=True)
-            continue
-        for item in items:
-            title = _text(item.find("title"))
-            kind = classify_press(title)
-            if not kind or not _indian_issue(title, kind):
+    for batch in found:
+        for deal in batch:
+            if deal.url in seen:
                 continue
-            published = _when(item)
-            if published is None or published < cutoff:
-                continue
-            link = direct_url(_text(item.find("link")) or _text(item.find("guid")))
-            if not link or not _on_source(link, domain):
-                continue
-            if link in seen:
-                continue
-            seen.add(link)
-            description = _text(item.find("description"))
-            deals.append(
-                Deal(
-                    id="press:" + link,
-                    kind=kind,
-                    company=title,
-                    summary=description[:300] or label,
-                    source=label,
-                    url=link,
-                    published=published,
-                )
-            )
+            seen.add(deal.url)
+            deals.append(deal)
     return deals
 
 
-def _search_url(domain: str) -> str:
-    query = urllib.parse.quote(f"({QUERY}) site:{domain}")
-    return "https://www.bing.com/news/search?q=" + query + "&format=RSS&sortbydate=1&setlang=en-IN"
+def _source_deals(source: tuple, cutoff: datetime.datetime) -> list[Deal]:
+    label, domain, sitemaps, use_bing = source
+    deals = []
+    seen = set()
+    for url in sitemaps:
+        try:
+            entries = _sitemap_entries(_fetch(url))
+        except Exception as exc:
+            print(f"feed skipped: {label}: {exc}", flush=True)
+            continue
+        for title, link, published in entries:
+            _add_deal(deals, seen, label, domain, title, link, published, "", cutoff)
+    if use_bing:
+        for query in BING_QUERIES:
+            try:
+                items = _items(_search_url(domain, query))
+            except Exception as exc:
+                print(f"feed skipped: {label}: {exc}", flush=True)
+                continue
+            for item in items:
+                title = _text(item.find("title"))
+                link = direct_url(_text(item.find("link")) or _text(item.find("guid")))
+                published = _when(item)
+                description = _text(item.find("description"))
+                _add_deal(deals, seen, label, domain, title, link, published, description, cutoff)
+    return deals
+
+
+def _add_deal(deals, seen, label, domain, title, link, published, description, cutoff) -> None:
+    kind = classify_press(title)
+    if not kind or not _indian_issue(title, kind):
+        return
+    if published is None or published < cutoff:
+        return
+    if not link or not _on_source(link, domain):
+        return
+    if link in seen:
+        return
+    seen.add(link)
+    deals.append(
+        Deal(
+            id="press:" + link,
+            kind=kind,
+            company=title,
+            summary=(description or label)[:300],
+            source=label,
+            url=link,
+            published=published,
+        )
+    )
+
+
+def _sitemap_entries(payload: bytes) -> list[tuple[str, str, datetime.datetime | None]]:
+    """Article title, link, and publication time from a Google news sitemap."""
+    root = ET.fromstring(payload)
+    entries = []
+    for node in root.iter():
+        if not node.tag.endswith("url"):
+            continue
+        link = ""
+        title = ""
+        published = None
+        for child in node.iter():
+            name = child.tag.rsplit("}", 1)[-1]
+            text = _text_value(child.text)
+            if name == "loc" and text.startswith("http") and not link:
+                link = text
+            elif name == "title" and text and not title:
+                title = text
+            elif name == "publication_date" and text and published is None:
+                published = _iso_when(text)
+        if link and title:
+            entries.append((title, link, published))
+    return entries
+
+
+def _search_url(domain: str, query: str) -> str:
+    quoted = urllib.parse.quote(f"({query}) site:{domain}")
+    return "https://www.bing.com/news/search?q=" + quoted + "&format=RSS&sortbydate=1&setlang=en-IN&count=40"
+
+
+def _fetch(url: str) -> bytes:
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return response.read()
 
 
 def _items(url: str) -> list[ET.Element]:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=40) as response:
-        root = ET.fromstring(response.read())
+    root = ET.fromstring(_fetch(url))
     return root.findall(".//item")
 
 
 def _text(node: ET.Element | None) -> str:
-    if node is None or node.text is None:
+    if node is None:
         return ""
-    return _SPACE.sub(" ", html.unescape(node.text)).strip()
+    return _text_value(node.text)
+
+
+def _text_value(value: str | None) -> str:
+    if not value:
+        return ""
+    return _SPACE.sub(" ", html.unescape(value)).strip()
+
+
+def _iso_when(raw: str) -> datetime.datetime | None:
+    try:
+        parsed = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return parsed
 
 
 def _when(item: ET.Element) -> datetime.datetime | None:
