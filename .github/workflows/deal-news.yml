@@ -1,12 +1,12 @@
 name: ECM deal alerts
 
-# Filings land outside market hours, so this asks for every 10 minutes all week.
-# GitHub's scheduler delays runs and sometimes drops them. A plain every-10-minutes
-# cron gives a dropped run another chance, and a public repository is not billed
+# Filings land outside market hours, so this asks for every 5 minutes all week.
+# Five minutes is the shortest interval GitHub Actions will run. The scheduler
+# can still start late or drop a run, and a public repository is not billed
 # for the minutes. A run with nothing new finishes in a few seconds.
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 concurrency:
