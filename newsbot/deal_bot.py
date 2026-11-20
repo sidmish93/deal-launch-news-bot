@@ -50,6 +50,14 @@ def main() -> None:
         _replay_day(token, state, args.day)
         return
     if args.once:
+        try:
+            _learn_groups(
+                token,
+                state,
+                "This group is connected. New ECM headlines will be posted here.",
+            )
+        except Exception as exc:
+            print("groups skipped: " + _redact(exc, token), flush=True)
         _poll(token, state)
         _save_state(state)
         return
@@ -203,6 +211,76 @@ def _read_updates(token: str, state: dict) -> None:
             )
         elif chat.get("type") == "private":
             _add_chat(token, state, chat_id)
+
+
+def _group_event(update: dict) -> tuple[str, int] | None:
+    """A group join or leave. Private chats are left to the saved chat id."""
+    member = update.get("my_chat_member")
+    if member:
+        chat = member.get("chat") or {}
+        if chat.get("type") not in ("group", "supergroup"):
+            return None
+        chat_id = chat.get("id")
+        status = (member.get("new_chat_member") or {}).get("status")
+        if not isinstance(chat_id, int):
+            return None
+        if status in ("member", "administrator", "creator"):
+            return ("join", chat_id)
+        if status in ("left", "kicked"):
+            return ("leave", chat_id)
+        return None
+    chat = (update.get("message") or {}).get("chat") or {}
+    chat_id = chat.get("id")
+    if chat.get("type") in ("group", "supergroup") and isinstance(chat_id, int):
+        return ("join", chat_id)
+    return None
+
+
+def _apply_group_event(state: dict, event: tuple[str, int]) -> str:
+    kind, chat_id = event
+    welcomed = state.setdefault("welcomed", [])
+    if kind == "join":
+        added = chat_id not in state["chats"]
+        if added:
+            state["chats"].append(chat_id)
+        if chat_id not in welcomed:
+            welcomed.append(chat_id)
+        return "added" if added else "kept"
+    removed = chat_id in state["chats"]
+    state["chats"] = [item for item in state["chats"] if item != chat_id]
+    state["welcomed"] = [item for item in welcomed if item != chat_id]
+    return "removed" if removed else "kept"
+
+
+def _learn_groups(token: str, state: dict, note: str) -> None:
+    """Remember a group the bot was added to, without replaying old headlines."""
+    for _ in range(10):
+        updates = _api(
+            token,
+            "getUpdates",
+            {
+                "timeout": 0,
+                "offset": state.get("offset", 0),
+                "allowed_updates": ["message", "my_chat_member"],
+            },
+            timeout=20,
+        )
+        if not updates:
+            return
+        for update in updates:
+            state["offset"] = int(update["update_id"]) + 1
+            event = _group_event(update)
+            if event is None:
+                continue
+            result = _apply_group_event(state, event)
+            if result == "added":
+                print(f"group {event[1]}", flush=True)
+                try:
+                    _send(token, event[1], note)
+                except RuntimeError as exc:
+                    print(f"send to {event[1]} failed: {_redact(exc, token)}", flush=True)
+            elif result == "removed":
+                print(f"left {event[1]}", flush=True)
 
 
 def _deliver_pending(token: str, state: dict) -> None:
