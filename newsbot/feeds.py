@@ -3,6 +3,9 @@
 Bing's news search only returns a short, unstable list, so a story could be
 published in the morning and stay invisible until that list happened to
 include it. Each paper's sitemap is the list of what it actually published.
+Economic Times verticals are not on the main list; each one publishes a
+48-hour sitemap. NDTV Profit and ET Auto refuse Python's HTTP client, so a
+blocked list is read again with a browser TLS fingerprint.
 """
 
 from __future__ import annotations
@@ -52,8 +55,8 @@ SOURCES = (
     ),
 )
 
-# Same paper, separate sites. /rss/recentstories is the fresh list; the section
-# feeds are not.
+# Same paper, separate sites. The 48-hour sitemap is the list; recentstories
+# is only the newest page and drops a story once twenty newer ones exist.
 ET_VERTICALS = (
     "auto", "chemicals", "energy", "bfsi", "cfo", "ciso", "realty", "pharma",
     "infra", "telecom", "manufacturing", "government", "legal", "health",
@@ -137,6 +140,8 @@ def classify(text: str) -> str | None:
         return "Preferential"
     if "buy-back" in low or "buyback" in low or "buy back" in low:
         return "Buyback"
+    if _is_stake(low):
+        return "Stake"
     if (
         "initial public offer" in low
         or "public issue" in low
@@ -160,26 +165,71 @@ def classify_press(title: str) -> str | None:
     return None
 
 
-def _indian_issue(title: str, kind: str) -> bool:
-    """A bare IPO headline has to be an Indian issue. QIP, blocks, and rights already are."""
-    if kind != "IPO":
+def _is_stake(low: str) -> bool:
+    """A stake sale, or a purchase of a stake that names the price or the offer."""
+    if re.search(r"\bstake sale\b", low):
         return True
+    if not re.search(r"\b(?:acquir\w*|buys?|buying|offloads?|sells?|selling)\b.{0,50}\bstake\b", low):
+        return False
+    return bool(
+        "crore" in low
+        or "₹" in low
+        or re.search(r"\brs\.?\s*\d", low)
+        or "open offer" in low
+        or "share purchase" in low
+    )
+
+
+def _price_reaction(low: str) -> bool:
+    """The share price is the story, and the deal is only the reason it moved."""
+    return re.search(
+        r"\b(?:shares?|stocks?)\b.{0,60}\b(?:fall|falls|fell|plunge|plunges|plunged|tank|tanks|tanked|slide|slides|slid|tumble|tumbles|crash|crashes|jump|jumps|jumped|surge|surges|rise|rises|rose|drop|drops|dropped|sink|sinks|sank)\b"
+        r"|\bpares? losses\b"
+        r"|\btrad(?:e|es|ing) flat\b"
+        r"|\bsharpest (?:fall|drop|decline|slide)\b"
+        r"|\bshare price in focus\b",
+        low,
+    ) is not None
+
+
+def _is_roundup(low: str) -> bool:
+    """A diary of several corporate actions, not one issue."""
+    if re.search(r"\brecord dates\b", low):
+        return True
+    return "alert" in low and re.search(r"\bdividends?\b.{0,40}\bbuy-?backs?\b", low) is not None
+
+
+def _indian_issue(title: str, kind: str) -> bool:
+    """The headline has to be the Indian issue itself, whichever deal word it uses."""
     low = (title or "").lower()
     if re.search(r"\b(nasdaq|nyse)\b", low) or "wall street" in low:
         return False
-    indian_money = "crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low)
-    if "$" in (title or "") and not indian_money:
-        return False
     if "securities and exchange commission" in low and "sebi" not in low:
         return False
-    # The sitemap is the whole paper, so a rupee figure or the letters "nse"
-    # inside "Sensex" is not enough. The headline has to be the issue itself.
+    # A dollar amount with no rupee figure is a foreign offer. "Stake sale" is
+    # the Indian phrase, and the valuation beside it is often written in dollars.
+    indian_money = "crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low)
+    if kind != "Stake" and "$" in (title or "") and not indian_money:
+        return False
+    if _price_reaction(low) or _is_roundup(low):
+        return False
+    if kind == "Stake" and re.search(r"\b(strike|protest|scam)\b", low):
+        return False
+    if kind != "IPO":
+        return True
+    # The sitemap is the whole paper. Mentioning an IPO is not the same as
+    # the company filing, pricing, opening, or moving that offer.
     return any(re.search(pattern, low) for pattern in (
         r"\bfiles\b", r"\bfiling\b", r"\bfiled\b", r"ipo papers",
-        r"\bto launch\b", r"\blaunches\b", r"\bto raise\b", r"\braises\b", r"\braising\b",
+        r"\bto launch\b", r"\blaunches\b", r"\bto raise\b",
+        r"\braises\b.{0,40}(?:₹|\brs\b|\d)", r"\braising\b.{0,40}(?:₹|\brs\b|\d|funds|capital)",
         r"fresh issue", r"offer for sale", r"price band", r"\bto open\b", r"\bopens\b",
         r"ipo size", r"\btrims\b", r"\bhalves\b", r"\bcuts\b",
         r"\bto float\b", r"\bapproves\b", r"\bnod\b",
+        r"\beyes\b", r"\beyeing\b", r"\bweighs\b", r"\bweighing\b",
+        r"\bdefers\b", r"\bdeferred\b", r"\bdeferring\b",
+        r"\bdelays\b", r"\bdelayed\b", r"\bpostpones\b", r"\bpostponed\b",
+        r"\bplans?\b", r"\bplanning\b", r"\bslips?\b", r"\bslipped\b",
     ))
 
 
@@ -210,7 +260,7 @@ def press_deals() -> list[Deal]:
         sources.append((
             "Economic Times",
             "economictimes.indiatimes.com",
-            (),
+            (f"https://{name}.economictimes.indiatimes.com/jcms-sitemaps/{name}/48hours/sitemap-48hours.xml",),
             False,
             feeds,
         ))
@@ -242,10 +292,12 @@ def _source_deals(source: tuple, cutoff: datetime.datetime) -> list[Deal]:
     deals = []
     seen = set()
     if domain == "ndtvprofit.com":
-        sitemaps = tuple(sitemaps) + _ndtv_daily_sitemaps()
+        # The news sitemap carries the headline. The daily files are the backup
+        # for a story that has already rotated off that shorter list.
+        sitemaps = ("https://www.ndtvprofit.com/news_sitemap.xml",) + _ndtv_daily_sitemaps()
         feeds = tuple(feeds) + (_site_feed("ndtvprofit.com"),)
-    parser = _listed_entries if domain == "ndtvprofit.com" else _sitemap_entries
     for url in sitemaps:
+        parser = _listed_entries if "sitemap-daily-" in url else _sitemap_entries
         try:
             entries = parser(_fetch(url))
         except Exception as exc:
@@ -349,9 +401,7 @@ def polish_headline(deal: Deal) -> Deal | None:
     if deal.source != "NDTV Profit":
         return deal
     try:
-        request = urllib.request.Request(deal.url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(request, timeout=8) as response:
-            page = response.read(250_000).decode("utf-8", "replace")
+        page = _fetch(deal.url)[:250_000].decode("utf-8", "replace")
     except Exception:
         return deal
     title = _meta(page, "og:title") or _meta(page, "twitter:title")
@@ -390,7 +440,7 @@ def _sitemap_entries(payload: bytes) -> list[tuple[str, str, datetime.datetime |
         for child in node.iter():
             name = child.tag.rsplit("}", 1)[-1]
             text = _text_value(child.text)
-            if name == "loc" and text.startswith("http") and not link:
+            if name == "loc" and _is_article_url(text) and not link:
                 link = text
             elif name == "title" and text and not title:
                 title = text
@@ -412,10 +462,37 @@ def _site_feed(host: str) -> str:
     return "https://www.bing.com/news/search?q=" + quoted + "&format=RSS&sortbydate=1&setlang=en-IN&count=40"
 
 
+def _is_article_url(url: str) -> bool:
+    path = (url or "").lower().split("?", 1)[0]
+    return path.startswith("http") and not path.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"))
+
+
 def _fetch(url: str) -> bytes:
+    """Read a publisher list. Akamai answers Python with 403 and a browser with the file."""
+    try:
+        return _urlopen(url)
+    except urllib.error.HTTPError as exc:
+        if exc.code != 403:
+            raise
+        try:
+            return _fetch_as_browser(url)
+        except Exception:
+            raise exc
+
+
+def _urlopen(url: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(request, timeout=20) as response:
         return response.read()
+
+
+def _fetch_as_browser(url: str) -> bytes:
+    from curl_cffi import requests
+
+    response = requests.get(url, impersonate="chrome", timeout=20)
+    if response.status_code != 200:
+        raise urllib.error.URLError(f"HTTP Error {response.status_code}")
+    return response.content
 
 
 def _items(url: str) -> list[ET.Element]:

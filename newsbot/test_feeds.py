@@ -57,6 +57,28 @@ class SitemapTests(unittest.TestCase):
         self.assertEqual(kind, "QIP")
         self.assertTrue(_indian_issue(title, kind))
 
+    def test_sitemap_skips_an_image_listed_before_the_article(self):
+        payload = """<?xml version="1.0"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                xmlns:news="http://www.google.com/schemas/sitemap-news/0.9"
+                xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+          <url>
+            <image:image><image:loc>https://c.ndtvimg.com/photo.jpg</image:loc></image:image>
+            <loc>https://www.ndtvprofit.com/markets/tata-steel-acquires-stake-123</loc>
+            <news:news>
+              <news:publication_date>2026-11-23T08:00:00+05:30</news:publication_date>
+              <news:title>Tata Steel to acquire 26% stake in APL Apollo for Rs 15,510 crore</news:title>
+            </news:news>
+          </url>
+        </urlset>
+        """
+        entries = _sitemap_entries(payload.encode())
+        self.assertEqual(len(entries), 1)
+        title, link, published = entries[0]
+        self.assertTrue(link.endswith("tata-steel-acquires-stake-123"))
+        self.assertEqual(title, "Tata Steel to acquire 26% stake in APL Apollo for Rs 15,510 crore")
+        self.assertEqual(published, datetime.datetime.fromisoformat("2026-11-23T08:00:00+05:30"))
+
 
 if __name__ == "__main__":
     unittest.main()

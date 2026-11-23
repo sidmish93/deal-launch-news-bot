@@ -30,6 +30,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Poll deal feeds
         env:
@@ -37,6 +38,7 @@ jobs:
           DEAL_CHAT_ID: ${{ secrets.DEAL_CHAT_ID }}
           REPLAY_DAY: ${{ github.event_name == 'workflow_dispatch' && inputs.day || '' }}
         run: |
+          pip install -q -r requirements.txt
           if [ -n "$REPLAY_DAY" ]; then
             python -m newsbot.deal_bot --day "$REPLAY_DAY"
           else

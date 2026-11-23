@@ -70,6 +70,32 @@ class ClassifyTests(unittest.TestCase):
             "IPO",
         )
         self.assertEqual(kept("Integris Medtech to launch Rs 3,000-crore IPO next week"), "IPO")
+        self.assertEqual(kept("Mahindra Last Mile Mobility eyes IPO in 18 months"), "IPO")
+        self.assertEqual(kept("Pernod Ricard weighs India IPO as market closes in on US"), "IPO")
+        self.assertEqual(kept("Chandrasekaran to push Tata Sons IPO plan at board meet"), "IPO")
+        self.assertEqual(kept("Oyo eyes IPO again as the offer slips to early 2027"), "IPO")
+        self.assertEqual(
+            kept("Yashoda Hospitals defers IPO; explores part stake sale targeting up to $3.2 bn"),
+            "Stake",
+        )
+        self.assertEqual(
+            kept("Tata Steel to acquire 26.38% stake in APL Apollo Tubes for Rs 15,510 crore"),
+            "Stake",
+        )
+        self.assertEqual(
+            kept("APL Apollo Tubes shares worth Rs 5,825 crore change hands in block deal"),
+            "Block",
+        )
+        self.assertIsNone(kept("Anthropic's record IPO raises hopes for a charitable windfall"))
+        self.assertIsNone(kept("Hogan Lovells advises on $375 million Aegis Logistics QIP"))
+        self.assertIsNone(kept("Lenskart shares fall nearly 4% as Rs 921-crore block deal takes place"))
+        self.assertIsNone(kept("Dalmia Bharat pares losses to trade flat after Rs 700-cr buyback announcement"))
+        self.assertIsNone(kept("Upcoming dividend, split, rights issue record dates next week"))
+        self.assertIsNone(kept("IDBI stake sale: employee forum announces December 3 strike"))
+        self.assertIsNone(kept("InvIT IPO rush gathers pace; 4-5 private trusts likely to go public by Mar 2027"))
+        self.assertIsNone(kept("After selling APL Apollo stake to Tata Steel, Sanjay Gupta family shifts focus to SG Mart"))
+        self.assertIsNone(kept("J M Baxi Group buys 51% stake in San Maritime; enters shipbuilding"))
+        self.assertIsNone(kept("Tata Steel share price in focus on announcement to acquire 26% stake in APL Apollo for Rs 15,511 crore"))
 
     def test_bing_tracker_url(self):
         link = (
