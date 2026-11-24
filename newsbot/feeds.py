@@ -213,7 +213,7 @@ def _is_priced_share_sale(low: str) -> bool:
 def _is_board_fundraise(low: str) -> bool:
     """A board, or a rupee amount, is enough when the headline says the company is raising."""
     if not re.search(
-        r"\bfund[\s-]?rais(?:e|ing|es)\b|\braising funds\b|\bfund raise\b|\braise funds\b",
+        r"\bfund[\s-]?rais(?:e|ing|es)\b|\braising funds\b|\bfund raise\b|\braise funds\b|\bequity capital raise\b",
         low,
     ):
         return False
@@ -409,6 +409,7 @@ _IPO_VERBS = (
     r"\bwithdraws?\b", r"\bwithdrawn\b", r"\bwithdrawal\b", r"\bscraps\b", r"\bscrapped\b",
     r"\bdivests?\b", r"\bdivesting\b",
     r"\bsubscription window\b",
+    r"\bobservation letters?\b", r"\bissued observations\b",
 )
 # "Approval" and a bare "Company - IPO" title count in the headline. An article
 # description says "subject to approval" too often for that to be a signal.

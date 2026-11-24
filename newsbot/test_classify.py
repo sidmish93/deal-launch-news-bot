@@ -444,6 +444,53 @@ class ClassifyTests(unittest.TestCase):
             offer_status("56% returns in six months! Ola Electric Mobility to raise ₹1,000 crore via rights issue"),
             "firm",
         )
+        self.assertEqual(
+            offer_status("Poonawalla Fincorp picks Jefferies, Kotak and JP Morgan for up to Rs 5,500 crore equity capital raise"),
+            "firm",
+        )
+        self.assertEqual(
+            classify("Poonawalla Fincorp picks Jefferies, Kotak and JP Morgan for up to Rs 5,500 crore equity capital raise"),
+            "Fundraise",
+        )
+        self.assertEqual(
+            offer_status("70% of ₹6,414 cr capital raise to fund fresh lending: IIFL Finance founder"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Bajaj Finance shares fall 5% as company plans to seek approval for capital raise"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("SpiceJet to consider fresh capital raise through equity, preference shares; shares rise 5%"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("RIL says Jio Platforms receives SEBI observation letter for proposed IPO"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("SEBI gives thumbs up to Bonbloc Technologies, Milestone Gears, Eastman Auto IPOs"),
+            "maybe",
+        )
+        self.assertEqual(
+            confirm_offer(
+                "SEBI gives thumbs up to Bonbloc Technologies, Milestone Gears, Eastman Auto IPOs",
+                "The SEBI has issued observations on the draft papers of Eastman Auto & Power on March 5.",
+            ),
+            "IPO",
+        )
+        self.assertEqual(
+            offer_status("IPO pipeline robust with 245 DRHPs filed with Sebi, 175 receive observations: Equirus"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Aurobindo Pharma shares fall 2% after USFDA issues one observation for Telangana facility"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Razorpay moves closer to public market debut as Sebi gives green signal to IPO"),
+            "no",
+        )
 
     def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
         from newsbot.deal_bot import _choose
