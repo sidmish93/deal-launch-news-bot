@@ -149,7 +149,9 @@ def classify(text: str) -> str | None:
         return "Rights"
     if "preferential issue" in low or "preferential allotment" in low or "preferential basis" in low:
         return "Preferential"
-    if re.search(r"\bconvertible warrants\b|\ballots?\b.{0,80}\bwarrants\b", low):
+    if re.search(r"\bpreferential(?:\s+\w+){1,2}\s+allotments?\b", low):
+        return "Preferential"
+    if re.search(r"\bconvertible warrants\b|\ballots?\b.{0,80}\bwarrants\b|\bwarrants?\s+issue\b", low):
         return "Preferential"
     if _is_priced_share_sale(low):
         return "Preferential"
@@ -185,10 +187,10 @@ def classify_press(title: str) -> str | None:
 
 def _is_stake(low: str) -> bool:
     """A stake sale, or a purchase of a stake that names the price or the offer."""
-    if re.search(r"\bstake sale\b|\bsale\b.{0,12}\bstake\b", low):
+    if re.search(r"\bstakes? sale\b|\bsale\b.{0,12}\bstakes?\b", low):
         return True
     if not re.search(
-        r"\b(?:acquir\w*|buys?|buying|offloads?|sells?|selling|divests?|divesting|pares?|paring|trims?|trimming|hikes?|hiking)\b.{0,50}\bstake\b",
+        r"\b(?:acquir\w*|buys?|buying|offloads?|sells?|selling|divests?|divesting|pares?|paring|trims?|trimming|hikes?|hiking)\b.{0,50}\bstakes?\b",
         low,
     ):
         return False
@@ -248,8 +250,8 @@ def _grey_market(low: str) -> bool:
 
 
 _PRICE_MOVE = re.compile(
-    r"\b(?:shares?|stocks?)\b.{0,60}\b(?:fall|falls|fell|plunge|plunges|plunged|tank|tanks|tanked|slide|slides|slid|tumble|tumbles|crash|crashes|jump|jumps|jumped|surge|surges|rise|rises|rose|drop|drops|dropped|sink|sinks|sank)\b"
-    r"|\b(?:shares?|stocks?) down\b"
+    r"\b(?:shares|stocks?|share price|stock price)\b.{0,60}\b(?:fall|falls|fell|plunge|plunges|plunged|tank|tanks|tanked|slide|slides|slid|tumble|tumbles|crash|crashes|jump|jumps|jumped|surge|surges|rise|rises|rose|drop|drops|dropped|sink|sinks|sank)\b"
+    r"|\b(?:shares|stocks?|share price|stock price) down\b"
     r"|\bpares? losses\b"
     r"|\btrad(?:e|es|ing) flat\b"
     r"|\bsharpest (?:fall|drop|decline|slide)\b"
@@ -326,7 +328,7 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
         return True
     if re.search(r"\badvis(?:e|es|ed|ing)\b|\bact(?:s|ed|ing)? on\b", low):
         return True
-    if re.search(r"\bpre[\s-]*ipo funds?\b", low):
+    if re.search(r"\bpre[\s-]*ipo fund(?:s|ing)?\b", low):
         return True
     if re.search(r"\bhong kong ipo\b|\bhong kong listing\b|\blisting in hong kong\b|\blondon ipo\b", low):
         return True
@@ -348,11 +350,22 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
         return True
     if _price_reaction(low) or _is_roundup(low):
         return True
-    if re.search(r"\bshould you (?:buy|subscribe|apply)\b|\bgood stock to bet\b|\bwhat (?:market )?experts say\b", low):
+    if re.search(r"\bshould you (?:buy|subscribe|apply|participate)\b|\bgood stock to bet\b|\bwhat (?:market )?experts say\b", low):
         return True
     if re.search(r"\bafter (?:the |its )?ipos?\b|\bfollowing (?:the |its )?ipos?\b", low):
         return True
     if re.search(r"\bexplained\b|\bjourney to\b|\bdecoded\b|\bkey risks\b|\bwhat if\b", low):
+        return True
+    if re.search(
+        r"\bcomplete guide\b|\bdo you know what\b|\bkey takeaways\b|\bwhy more companies\b|\btop \d+ things\b",
+        low,
+    ):
+        return True
+    if re.search(r"\bdrhp shows\b|\bdata from\b.{0,40}\bdrhp\b", low):
+        return True
+    if kind in {"OFS", "Stake"} and re.search(r"\d+-year high", low):
+        return True
+    if kind == "Buyback" and not indian_money and re.search(r"\bsebi board\b", low):
         return True
     if re.search(r"\bbooked\b.{0,20}\d+(?:\.\d+)?\s*x\b", low):
         return True

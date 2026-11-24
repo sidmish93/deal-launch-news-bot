@@ -344,6 +344,74 @@ class ClassifyTests(unittest.TestCase):
             offer_status("Atomberg IPO decoded: Issue size, investor exits, financials and key risks"),
             "no",
         )
+        self.assertEqual(
+            offer_status("TeamLease Services announces ₹238 crore share buyback at ₹1,600 per share; posts 26% rise in Q4 net profit"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Vodafone Idea to raise Rs 4,730 crore from Aditya Birla Group entity via warrants issue"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("SBI MF acquires stakes in Adani Enterprises and Adani Energy from GQG for Rs 5,748 crore"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Aditya Birla Capital raises ₹4,000 crore from promoters via preferential share allotment"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Zepto seals pre-IPO fundraise, defers listing to next year"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Reliance Jio IPO: 7 risk factors investors should know as firm gets Sebi nod for Rs 37,000-crore issue"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("NHPC share price tanks around 6% after fundraise move through the OFS"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Why India keeps selling stakes in PSUs instead of privatising them"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Do you know what an Offer for Sale (OFS) is? Here's a complete guide"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("What income makes you middle class in India? Here’s what data from NSE DRHP shows"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Anthropic IPO: 6 key takeaways from the Claude maker's filing"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Why more companies are choosing SEBI's confidential IPO filing route"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("NSE IPO journey moves ahead: Top 10 things investors should know from DRHP"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Steamhouse raises Rs 50 crore in pre-IPO funding from Madhusudhan Kela-backed funds"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Bajaj Auto buyback record date nears. Should you participate in ₹5,633 crore share repurchase deal?"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Govt's PSU stake sales via OFS at 11-year high so far in 2026"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Sebi board brings back open-market share buybacks; eases debt listing"),
+            "no",
+        )
 
     def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
         from newsbot.deal_bot import _choose
