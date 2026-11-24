@@ -130,6 +130,65 @@ class ClassifyTests(unittest.TestCase):
             "no",
         )
         self.assertIsNone(confirm_offer("Fintech WeRize posts Rs 44 crore profit, targets 10x growth ahead of IPO"))
+        self.assertEqual(
+            offer_status("Tata Steel to buy up to 26.38% in APL Apollo for Rs 15,511 crore, launch Rs 16,756-crore open offer"),
+            "firm",
+        )
+        self.assertEqual(offer_status("Persistent Systems may soon launch up to $450 million QIP"), "firm")
+        self.assertEqual(offer_status("IIFL Capital launches up to $250 million block deal in Sagility"), "firm")
+        self.assertEqual(offer_status("Hogan Lovells advises on $375 million Aegis Logistics QIP"), "no")
+        self.assertEqual(
+            offer_status("Muthoot Finance shelves Belstar Microfinance IPO, not keen to list now"),
+            "firm",
+        )
+        self.assertEqual(offer_status("Atomberg Technologies receives SEBI approval for Rs 450 crore IPO"), "firm")
+        self.assertEqual(
+            offer_status("Coal India's Mahanadi Coalfields IPO price band set at Rs 129-136 per share | Check GMP"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Foodlink F&B Holdings IPO GMP at 6% ahead of November 26 issue opening; check price band"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Aegis Logistics announces Rs 3,500 crore fundraising plan through QIP; stock rises 3%"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Mahanadi Coalfields IPO: Coal India to divest up to 10% stake"),
+            "firm",
+        )
+        self.assertEqual(offer_status("IIFCL IPO: Govt to part sale stake, company to issue fresh shares"), "firm")
+        self.assertEqual(
+            offer_status("Nvidia-backed Australian AI firm Firmus withdraws mega IPO, citing market volatility"),
+            "no",
+        )
+        self.assertEqual(offer_status("Bonfiglioli Transmissions Ltd - IPO"), "firm")
+        self.assertEqual(offer_status("Shell announces $5 billion buyback as oil refining booms"), "no")
+        self.assertEqual(
+            offer_status("IPO GMP: Bonfiglioli vs Tonbo vs Sahajanand Medical vs Zetwerk — Dates, price band, key details"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("IIFL Finance Block Deal: Trade Volume Crosses Two Times Its 30-Day Average; Stock Jumps Over 6%"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Watrana Rentals SME IPO opens today; GMP at 25%, check key details"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Crystal Crop Protection IPO opens: GMP signals 5% listing premium; should you subscribe?"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("InvIT IPO rush gathers pace; 4-5 private trusts likely to go public by Mar 2027"),
+            "no",
+        )
+        self.assertIsNone(confirm_offer(
+            "SEBI mulls 3rd-party monitoring of IPO fund use, shell firms pose market risk",
+            "The chairman said the regulator is reviewing how IPO proceeds are monitored.",
+        ))
 
     def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
         from newsbot.deal_bot import _choose

@@ -72,14 +72,15 @@ BING_QUERIES = (
 )
 
 PRESS_SKIP = (
-    "grey market",
-    "gmp",
     "subscription status",
     "subscribed",
+    "times subscription",
     "lists at",
+    "list at",
+    "list today",
     "listing gain",
     "listing loss",
-    "debuts at",
+    "debut",
     "allotment status",
 )
 
@@ -132,9 +133,19 @@ def classify(text: str) -> str | None:
         return "QIP"
     if "block deal" in low or "bulk deal" in low:
         return "Block"
+    if "open offer" in low and (
+        "crore" in low
+        or "₹" in low
+        or "per share" in low
+        or "a share" in low
+        or "apiece" in low
+        or re.search(r"\bat\s+(?:₹|rs\.?\s*\d)", low)
+        or re.search(r"\b(?:launch\w*|makes?|making|announc\w*|triggers?)\b", low)
+    ):
+        return "Open offer"
     if "offer for sale" in low:
         return "OFS"
-    if "rights issue" in low or "right issue" in low:
+    if "rights issue" in low or "right issue" in low or "rights offer" in low:
         return "Rights"
     if "preferential issue" in low or "preferential allotment" in low or "preferential basis" in low:
         return "Preferential"
@@ -145,6 +156,7 @@ def classify(text: str) -> str | None:
     if (
         "initial public offer" in low
         or "public issue" in low
+        or "public offering" in low
         or re.search(r"\bfpo\b", low)
         or "follow-on public" in low
         or "follow on public" in low
@@ -155,7 +167,7 @@ def classify(text: str) -> str | None:
 
 def classify_press(title: str) -> str | None:
     low = (title or "").lower()
-    if any(skip in low for skip in PRESS_SKIP):
+    if _grey_market(low) or any(skip in low for skip in PRESS_SKIP):
         return None
     kind = classify(title)
     if kind:
@@ -167,9 +179,12 @@ def classify_press(title: str) -> str | None:
 
 def _is_stake(low: str) -> bool:
     """A stake sale, or a purchase of a stake that names the price or the offer."""
-    if re.search(r"\bstake sale\b", low):
+    if re.search(r"\bstake sale\b|\bsale\b.{0,12}\bstake\b", low):
         return True
-    if not re.search(r"\b(?:acquir\w*|buys?|buying|offloads?|sells?|selling)\b.{0,50}\bstake\b", low):
+    if not re.search(
+        r"\b(?:acquir\w*|buys?|buying|offloads?|sells?|selling|divests?|divesting|pares?|paring|trims?|trimming|hikes?|hiking)\b.{0,50}\bstake\b",
+        low,
+    ):
         return False
     return bool(
         "crore" in low
@@ -180,16 +195,45 @@ def _is_stake(low: str) -> bool:
     )
 
 
+def _grey_market(low: str) -> bool:
+    """A grey-market note. GMP tagged on after the opening or the price band still counts."""
+    if "grey market" in low or re.search(r"\bgmp at\b|\bgmp signals?\b", low):
+        return True
+    gmp = re.search(r"\bgmp\b", low)
+    if not gmp:
+        return False
+    deal = re.search(r"\bprice band\b|\bopens\b|\bto open\b", low)
+    return not (deal and deal.start() < gmp.start())
+
+
+_PRICE_MOVE = re.compile(
+    r"\b(?:shares?|stocks?)\b.{0,60}\b(?:fall|falls|fell|plunge|plunges|plunged|tank|tanks|tanked|slide|slides|slid|tumble|tumbles|crash|crashes|jump|jumps|jumped|surge|surges|rise|rises|rose|drop|drops|dropped|sink|sinks|sank)\b"
+    r"|\bpares? losses\b"
+    r"|\btrad(?:e|es|ing) flat\b"
+    r"|\bsharpest (?:fall|drop|decline|slide)\b"
+    r"|\bshare price in focus\b",
+)
+_DEAL_WORD = re.compile(
+    r"\b(?:qip|block deal|bulk deal|buy-?back|buyback|rights issue|rights offer|preferential issue|open offer|offer for sale)\b"
+)
+
+
 def _price_reaction(low: str) -> bool:
     """The share price is the story, and the deal is only the reason it moved."""
-    return re.search(
-        r"\b(?:shares?|stocks?)\b.{0,60}\b(?:fall|falls|fell|plunge|plunges|plunged|tank|tanks|tanked|slide|slides|slid|tumble|tumbles|crash|crashes|jump|jumps|jumped|surge|surges|rise|rises|rose|drop|drops|dropped|sink|sinks|sank)\b"
-        r"|\bpares? losses\b"
-        r"|\btrad(?:e|es|ing) flat\b"
-        r"|\bsharpest (?:fall|drop|decline|slide)\b"
-        r"|\bshare price in focus\b",
-        low,
-    ) is not None
+    match = _PRICE_MOVE.search(low)
+    if not match:
+        return False
+    deal = _DEAL_WORD.search(low)
+    size = re.search(r"crore|₹|\brs\.?\s*\d|\$\s*\d", low)
+    if (
+        deal
+        and size
+        and deal.start() < match.start()
+        and size.start() < match.start()
+        and not re.search(r"\bpares? losses\b|\bshare price in focus\b", low)
+    ):
+        return False
+    return True
 
 
 def _is_roundup(low: str) -> bool:
@@ -203,7 +247,9 @@ def _is_roundup(low: str) -> bool:
         )
         if actions >= 2:
             return True
-    if re.search(r"\binvits\b", low) and re.search(r"\b(?:expected|likely) to\b|\bup to \d", low):
+    if re.search(r"\binvits?\b", low) and re.search(
+        r"\b(?:expected|likely) to\b|\bup to \d|\brush\b|\bgathers pace\b", low
+    ):
         return True
     return "alert" in low and re.search(r"\bdividends?\b.{0,40}\bbuy-?backs?\b", low) is not None
 
@@ -215,24 +261,58 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
         return True
     if re.search(r"\b(nasdaq|nyse)\b", low) or "wall street" in low:
         return True
+    if re.search(r"\baustrali(?:a|an)\b|\bus ipo\b|\bu\.s\. ipo\b", low):
+        return True
     if "securities and exchange commission" in low and "sebi" not in low:
         return True
-    # A dollar amount with no rupee figure is a foreign offer. "Stake sale" is
-    # the Indian phrase, and the valuation beside it is often written in dollars.
-    indian_money = "crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low)
-    stake = kind == "Stake" or "stake sale" in low
-    if not stake and "$" in (title or "") and not indian_money:
+    if re.search(r"\badvis(?:e|es|ed|ing)\b", low):
+        return True
+    # A dollar IPO with no rupee figure is a foreign listing. QIP, block and
+    # open-offer headlines in this market are often sized in dollars.
+    indian_money = "crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low) or "₹" in (title or "")
+    domestic = kind in {
+        "Stake", "QIP", "Block", "Open offer", "DRHP", "RHP", "UDRHP",
+    }
+    if not domestic and "$" in (title or "") and not indian_money:
         return True
     if _price_reaction(low) or _is_roundup(low):
         return True
-    if re.search(r"\bshould you buy\b|\bgood stock to bet\b|\bwhat (?:market )?experts say\b", low):
+    if re.search(r"\bshould you (?:buy|subscribe)\b|\bgood stock to bet\b|\bwhat (?:market )?experts say\b", low):
         return True
-    if stake and re.search(r"\b(strike|protest|scam)\b", low):
+    if (kind == "Stake" or "stake sale" in low) and re.search(r"\b(strike|protest|scam)\b", low):
         return True
     return False
 
 
-def _indian_issue(title: str, kind: str) -> bool:
+_IPO_VERBS = (
+    r"\bfiles\b", r"\bfiling\b", r"\bfiled\b", r"ipo papers",
+    r"\bto launch\b", r"\blaunches\b", r"\blaunched\b", r"\bwill launch\b", r"\bmay launch\b", r"\bmight launch\b",
+    r"\bto raise\b",
+    r"\braises\b.{0,40}(?:₹|\brs\b|\d)", r"\braising\b.{0,40}(?:₹|\brs\b|\d|funds|capital)",
+    r"fresh issue", r"offer for sale", r"price band", r"\bto open\b", r"\bopens\b",
+    r"ipo size", r"\btrims\b", r"\bhalves\b", r"\bcuts\b",
+    r"\bto float\b", r"\bapproves\b", r"\bapproved\b", r"\bnod\b",
+    r"\beyes\b", r"\beyeing\b", r"\bweighs\b", r"\bweighing\b",
+    r"\bdefers\b", r"\bdeferred\b", r"\bdeferring\b",
+    r"\bdelays\b", r"\bdelayed\b", r"\bdelaying\b",
+    r"\bpostpones\b", r"\bpostponed\b",
+    r"\bplans?\b", r"\bplanning\b", r"\bslips?\b", r"\bslipped\b",
+    r"\bshelves\b", r"\bshelved\b", r"\bshelving\b", r"\bon hold\b",
+    r"\bwithdraws?\b", r"\bwithdrawn\b", r"\bwithdrawal\b", r"\bscraps\b", r"\bscrapped\b",
+    r"\bdivests?\b", r"\bdivesting\b",
+    r"\bsubscription window\b",
+)
+# "Approval" and a bare "Company - IPO" title count in the headline. An article
+# description says "subject to approval" too often for that to be a signal.
+_IPO_HEADLINE_VERBS = _IPO_VERBS + (
+    r"\bapprovals?\b",
+    r"\bgreen light\b",
+    r"\bclears\b", r"\bcleared\b",
+    r"-\s*ipos?\s*$",
+)
+
+
+def _indian_issue(title: str, kind: str, *, article: bool = False) -> bool:
     """The headline has to be the Indian issue itself, whichever deal word it uses."""
     if _blocks_issue(title, kind):
         return False
@@ -241,18 +321,8 @@ def _indian_issue(title: str, kind: str) -> bool:
         return True
     # The sitemap is the whole paper. Mentioning an IPO is not the same as
     # the company filing, pricing, opening, or moving that offer.
-    return any(re.search(pattern, low) for pattern in (
-        r"\bfiles\b", r"\bfiling\b", r"\bfiled\b", r"ipo papers",
-        r"\bto launch\b", r"\blaunches\b", r"\bto raise\b",
-        r"\braises\b.{0,40}(?:₹|\brs\b|\d)", r"\braising\b.{0,40}(?:₹|\brs\b|\d|funds|capital)",
-        r"fresh issue", r"offer for sale", r"price band", r"\bto open\b", r"\bopens\b",
-        r"ipo size", r"\btrims\b", r"\bhalves\b", r"\bcuts\b",
-        r"\bto float\b", r"\bapproves\b", r"\bnod\b",
-        r"\beyes\b", r"\beyeing\b", r"\bweighs\b", r"\bweighing\b",
-        r"\bdefers\b", r"\bdeferred\b", r"\bdeferring\b",
-        r"\bdelays\b", r"\bdelayed\b", r"\bpostpones\b", r"\bpostponed\b",
-        r"\bplans?\b", r"\bplanning\b", r"\bslips?\b", r"\bslipped\b",
-    ))
+    patterns = _IPO_VERBS if article else _IPO_HEADLINE_VERBS
+    return any(re.search(pattern, low) for pattern in patterns)
 
 
 # Verbs a headline uses when the strict list above does not. Kept next to the
@@ -289,10 +359,10 @@ def confirm_offer(headline: str, description: str = "") -> str | None:
         return None
     if _blocks_issue(blob, kind) or _blocks_issue(headline, kind):
         return None
-    if _indian_issue(headline, kind) or _indian_issue(blob, kind):
+    if _indian_issue(headline, kind) or _indian_issue(blob, kind, article=True):
         return kind
     low = blob.lower()
-    if re.match(r"(investors|analysts|brokerages|markets|the market|dalal street)\b", low):
+    if re.match(r"(investors|analysts|brokerages|markets|the market|dalal street|sebi)\b", low):
         return None
     if kind == "IPO" and _offer_action(blob):
         return "IPO"
