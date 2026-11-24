@@ -149,8 +149,12 @@ def classify(text: str) -> str | None:
         return "Rights"
     if "preferential issue" in low or "preferential allotment" in low or "preferential basis" in low:
         return "Preferential"
+    if _is_priced_share_sale(low):
+        return "Preferential"
     if "buy-back" in low or "buyback" in low or "buy back" in low:
         return "Buyback"
+    if _is_board_fundraise(low):
+        return "Fundraise"
     if _is_stake(low):
         return "Stake"
     if (
@@ -195,9 +199,44 @@ def _is_stake(low: str) -> bool:
     )
 
 
+def _is_priced_share_sale(low: str) -> bool:
+    """A share sale to investors that names the rupee size is a preferential issue."""
+    if not re.search(r"\bshare sale\b", low) or not re.search(r"\binvestors?\b", low):
+        return False
+    return "crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low) is not None
+
+
+def _is_board_fundraise(low: str) -> bool:
+    """A board, or a rupee amount, is enough when the headline says the company is raising."""
+    if not re.search(
+        r"\bfund[\s-]?rais(?:e|ing|es)\b|\braising funds\b|\bfund raise\b|\braise funds\b",
+        low,
+    ):
+        return False
+    if not (
+        re.search(r"\bboard\b", low)
+        or "crore" in low
+        or "₹" in low
+        or re.search(r"\brs\.?\s*\d", low)
+    ):
+        return False
+    if re.search(r"\b(?:debt|bonds?|ncds?|treasury|yields?)\b", low):
+        return False
+    if re.search(r"\bseries\s+[a-e]\b|\bpre-series\b|\bfunding round\b|\bventure capital\b", low):
+        return False
+    if re.search(r"\bunder (?:the )?lens\b|\bprobe\b|\bcrackdown\b", low):
+        return False
+    # "Ramp up growth" is a private round. A board fundraise can still say growth.
+    if re.search(r"\bgrowth\b", low) and not re.search(r"\bboard\b", low):
+        return False
+    return True
+
+
 def _grey_market(low: str) -> bool:
     """A grey-market note. GMP tagged on after the opening or the price band still counts."""
     if "grey market" in low or re.search(r"\bgmp at\b|\bgmp signals?\b", low):
+        return True
+    if re.search(r"\bgmp\b.{0,20}(?:₹|rs\.?\s*)\s*\d", low):
         return True
     gmp = re.search(r"\bgmp\b", low)
     if not gmp:
@@ -208,13 +247,15 @@ def _grey_market(low: str) -> bool:
 
 _PRICE_MOVE = re.compile(
     r"\b(?:shares?|stocks?)\b.{0,60}\b(?:fall|falls|fell|plunge|plunges|plunged|tank|tanks|tanked|slide|slides|slid|tumble|tumbles|crash|crashes|jump|jumps|jumped|surge|surges|rise|rises|rose|drop|drops|dropped|sink|sinks|sank)\b"
+    r"|\b(?:shares?|stocks?) down\b"
     r"|\bpares? losses\b"
     r"|\btrad(?:e|es|ing) flat\b"
     r"|\bsharpest (?:fall|drop|decline|slide)\b"
     r"|\bshare price in focus\b",
 )
 _DEAL_WORD = re.compile(
-    r"\b(?:qip|block deal|bulk deal|buy-?back|buyback|rights issue|rights offer|preferential issue|open offer|offer for sale)\b"
+    r"\b(?:qip|block deal|bulk deal|buy-?back|buyback|rights issue|rights offer|preferential issue|open offer|offer for sale|share sale)\b"
+    r"|\bfund[\s-]?rais(?:e|ing|es)\b|\braising funds\b|\bfund raise\b|\braise funds\b"
 )
 
 
@@ -240,6 +281,8 @@ def _is_roundup(low: str) -> bool:
     """A diary of several corporate actions, not one issue."""
     if re.search(r"\brecord dates\b", low):
         return True
+    if _diary_actions(low) >= 3:
+        return True
     if re.search(r"\brecord date\b", low):
         actions = sum(
             phrase in low
@@ -254,6 +297,20 @@ def _is_roundup(low: str) -> bool:
     return "alert" in low and re.search(r"\bdividends?\b.{0,40}\bbuy-?backs?\b", low) is not None
 
 
+def _diary_actions(low: str) -> int:
+    """Dividend, bonus, split, and buyback. One buyback phrasing counts once."""
+    count = 0
+    if "dividend" in low:
+        count += 1
+    if "bonus" in low:
+        count += 1
+    if re.search(r"\bsplits?\b", low):
+        count += 1
+    if "buyback" in low or "buy-back" in low or "buy back" in low:
+        count += 1
+    return count
+
+
 def _blocks_issue(title: str, kind: str | None = None) -> bool:
     """Price moves, foreign listings, grey-market notes, and roundups are not a deal."""
     low = (title or "").lower()
@@ -265,7 +322,19 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
         return True
     if "securities and exchange commission" in low and "sebi" not in low:
         return True
-    if re.search(r"\badvis(?:e|es|ed|ing)\b", low):
+    if re.search(r"\badvis(?:e|es|ed|ing)\b|\bact(?:s|ed|ing)? on\b", low):
+        return True
+    if re.search(r"\bpre[\s-]*ipo funds?\b", low):
+        return True
+    if re.search(r"\bhong kong ipo\b|\bhong kong listing\b|\blisting in hong kong\b|\blondon ipo\b", low):
+        return True
+    if kind == "Buyback" and re.search(
+        r"\b(?:debt|bonds?|treasur(?:y|ies))\s+buy-?backs?\b"
+        r"|\b(?:government|govt)\s+securities\b"
+        r"|\bg-?secs?\b"
+        r"|\byields?\b",
+        low,
+    ):
         return True
     # A dollar IPO with no rupee figure is a foreign listing. QIP, block and
     # open-offer headlines in this market are often sized in dollars.
@@ -277,7 +346,7 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
         return True
     if _price_reaction(low) or _is_roundup(low):
         return True
-    if re.search(r"\bshould you (?:buy|subscribe)\b|\bgood stock to bet\b|\bwhat (?:market )?experts say\b", low):
+    if re.search(r"\bshould you (?:buy|subscribe|apply)\b|\bgood stock to bet\b|\bwhat (?:market )?experts say\b", low):
         return True
     if (kind == "Stake" or "stake sale" in low) and re.search(r"\b(strike|protest|scam)\b", low):
         return True
@@ -290,7 +359,7 @@ _IPO_VERBS = (
     r"\bto raise\b",
     r"\braises\b.{0,40}(?:₹|\brs\b|\d)", r"\braising\b.{0,40}(?:₹|\brs\b|\d|funds|capital)",
     r"fresh issue", r"offer for sale", r"price band", r"\bto open\b", r"\bopens\b",
-    r"ipo size", r"\btrims\b", r"\bhalves\b", r"\bcuts\b",
+    r"ipo size", r"\btrims?\b", r"\bshrinks?\b", r"\bhalves\b", r"\bcuts\b",
     r"\bto float\b", r"\bapproves\b", r"\bapproved\b", r"\bnod\b",
     r"\beyes\b", r"\beyeing\b", r"\bweighs\b", r"\bweighing\b",
     r"\bdefers\b", r"\bdeferred\b", r"\bdeferring\b",

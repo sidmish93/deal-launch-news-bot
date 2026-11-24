@@ -189,6 +189,98 @@ class ClassifyTests(unittest.TestCase):
             "SEBI mulls 3rd-party monitoring of IPO fund use, shell firms pose market risk",
             "The chairman said the regulator is reviewing how IPO proceeds are monitored.",
         ))
+        self.assertEqual(
+            offer_status("SG Mart shares gain over 10% as board to meet this week to consider fund raising proposal"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Aegis Logistics board approves Rs 6,000 crore fund raising proposal"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Ather Energy allots shares, warrants in ₹1,200 crore fundraise"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Venus Pipes plans ₹372 crore share sale to 18 investors including Ashish Kacholia"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("NSE IPO shrinks as SBI, Bank of Baroda, MS Strategic trim their OFS size"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("SG Mart shares trade in red as company to mull raising funds on Nov 26"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Multibagger stock: SG Mart surges 13% to record high on fundraise buzz"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Japan-based Galilei Holdings to invest Rs 180 crore in Ice Make Refrigeration"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("US boosts long-term debt buybacks after yields hit highest levels in years"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Centre announces ₹30,000 crore govt securities buyback via auction"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("CAM, Trilegal, Linklaters act on Piramal Finance's INR 2,100 crore QIP"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("NSE IPO opens today; should you apply? Check reviews, GMP"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("JM Financial's maiden pre-IPO fund raises ₹700 crore in first close"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Dividend, bonus, split, buyback, spin off in October: TCS, NMDC, PTC India"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Chinese AI firm Moonshot files confidentially for Hong Kong IPO"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Airtel Money files for London IPO through offer for sale by shareholders"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("IPO: Share price band ₹300, GMP ₹313 - Check last date to apply"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Pixxel raises $100 mn in Series C, India's largest spacetech fundraise"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Ola shares crash 9% ahead of board meet to raise funds"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Ola sheds 3.5%: Why is EV 2W stock down despite ₹1,000 cr fundraise plan?"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Ionic Wealth announces Rs 117 crore fundraise from Angel One to ramp up growth"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("SpiceJet crisis: Why pilots' body wants govt to put ₹5,500-crore fundraise under lens"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Adani Airports raises ₹2,790 crore from 360 ONE Asset, total fundraise hits $1.35 billion"),
+            "firm",
+        )
 
     def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
         from newsbot.deal_bot import _choose
