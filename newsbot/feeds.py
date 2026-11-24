@@ -143,11 +143,13 @@ def classify(text: str) -> str | None:
         or re.search(r"\b(?:launch\w*|makes?|making|announc\w*|triggers?)\b", low)
     ):
         return "Open offer"
-    if "offer for sale" in low:
+    if "offer for sale" in low or re.search(r"\bofs\b", low):
         return "OFS"
-    if "rights issue" in low or "right issue" in low or "rights offer" in low:
+    if "rights issue" in low or "right issue" in low or "rights offer" in low or "rights basis" in low:
         return "Rights"
     if "preferential issue" in low or "preferential allotment" in low or "preferential basis" in low:
+        return "Preferential"
+    if re.search(r"\bconvertible warrants\b|\ballots?\b.{0,80}\bwarrants\b", low):
         return "Preferential"
     if _is_priced_share_sale(low):
         return "Preferential"
@@ -254,7 +256,7 @@ _PRICE_MOVE = re.compile(
     r"|\bshare price in focus\b",
 )
 _DEAL_WORD = re.compile(
-    r"\b(?:qip|block deal|bulk deal|buy-?back|buyback|rights issue|rights offer|preferential issue|open offer|offer for sale|share sale)\b"
+    r"\b(?:qip|block deal|bulk deal|buy-?back|buyback|rights issue|rights offer|rights basis|preferential issue|open offer|offer for sale|ofs|share sale)\b"
     r"|\bfund[\s-]?rais(?:e|ing|es)\b|\braising funds\b|\bfund raise\b|\braise funds\b"
 )
 
@@ -264,15 +266,15 @@ def _price_reaction(low: str) -> bool:
     match = _PRICE_MOVE.search(low)
     if not match:
         return False
+    if re.search(r"\bpares? losses\b|\bshare price in focus\b", low):
+        return True
     deal = _DEAL_WORD.search(low)
     size = re.search(r"crore|₹|\brs\.?\s*\d|\$\s*\d", low)
-    if (
-        deal
-        and size
-        and deal.start() < match.start()
-        and size.start() < match.start()
-        and not re.search(r"\bpares? losses\b|\bshare price in focus\b", low)
-    ):
+    if deal and size and deal.start() < match.start() and size.start() < match.start():
+        return False
+    # The board approved it, or the offer was launched, and the rupee size is named.
+    rupee = "crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low)
+    if rupee and re.search(r"\bboard approv(?:es|ed)\b|\blaunch(?:es|ed)?\b", low):
         return False
     return True
 
@@ -348,6 +350,22 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
         return True
     if re.search(r"\bshould you (?:buy|subscribe|apply)\b|\bgood stock to bet\b|\bwhat (?:market )?experts say\b", low):
         return True
+    if re.search(r"\bafter (?:the |its )?ipos?\b|\bfollowing (?:the |its )?ipos?\b", low):
+        return True
+    if re.search(r"\bexplained\b|\bjourney to\b|\bdecoded\b|\bkey risks\b|\bwhat if\b", low):
+        return True
+    if re.search(r"\bbooked\b.{0,20}\d+(?:\.\d+)?\s*x\b", low):
+        return True
+    if re.search(r"\bamong (?:\d+\s+)?new issues\b|\bfull list\b", low):
+        return True
+    if re.search(r"\bdrhps\b|\bipo index\b", low):
+        return True
+    if (
+        kind == "Buyback"
+        and not ("crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low) or "₹" in (title or ""))
+        and re.search(r"\b(?:u\.s\.|europe|european|refiners)\b|\bus\b", low)
+    ):
+        return True
     if (kind == "Stake" or "stake sale" in low) and re.search(r"\b(strike|protest|scam)\b", low):
         return True
     return False
@@ -365,7 +383,7 @@ _IPO_VERBS = (
     r"\bdefers\b", r"\bdeferred\b", r"\bdeferring\b",
     r"\bdelays\b", r"\bdelayed\b", r"\bdelaying\b",
     r"\bpostpones\b", r"\bpostponed\b",
-    r"\bplans?\b", r"\bplanning\b", r"\bslips?\b", r"\bslipped\b",
+    r"\bplans?\b", r"\bplanning\b", r"\bslips?\s+to\b", r"\bslipped\s+to\b",
     r"\bshelves\b", r"\bshelved\b", r"\bshelving\b", r"\bon hold\b",
     r"\bwithdraws?\b", r"\bwithdrawn\b", r"\bwithdrawal\b", r"\bscraps\b", r"\bscrapped\b",
     r"\bdivests?\b", r"\bdivesting\b",

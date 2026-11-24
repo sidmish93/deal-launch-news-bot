@@ -281,6 +281,69 @@ class ClassifyTests(unittest.TestCase):
             offer_status("Adani Airports raises ₹2,790 crore from 360 ONE Asset, total fundraise hits $1.35 billion"),
             "firm",
         )
+        self.assertEqual(
+            offer_status("Cochin Shipyard OFS opens July 7; govt offers 2.52% stake at Rs 1,400 floor price"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Board of Brigade Enterprises approves issuance of convertible warrants"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("SPML Infra allots 6.93 lakh equity shares and 95.39 lakh warrants"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Aditya Birla Capital invests Rs 485 crore in Aditya Birla Sun Life Insurance on rights basis"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Investors pull Oyo's valuation down further as IPO slips to early 2027"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("RCF shares jump 3% after board approves Rs 1,500 crore FPO"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Nifty IPO index up 19.5% in 2026 as broad market slips, shows data"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("NSE Q1 Results: IPO-bound exchange posts 9% rise in profit as margin expands; revenue slips"),
+            "maybe",
+        )
+        self.assertIsNone(confirm_offer(
+            "NSE Q1 Results: IPO-bound exchange posts 9% rise in profit as margin expands; revenue slips"
+        ))
+        self.assertEqual(
+            offer_status("Anthropic mulls mandatory employee stock trading plans after IPO"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Sebi open market share buy-back norms explained: Eligibility, timeline and impact"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("US refiners ramp up buybacks as Iran war boosts fuel margins"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Crystal Crop Protection IPO booked nearly 3x on Day 2"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Upcoming IPOs: Shiprocket IPO, Dhoot Transmission IPO among new issues to open next week; full list here"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("IPO Rush: Over 50 firms file DRHPs ahead of Sebi deadline"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Atomberg IPO decoded: Issue size, investor exits, financials and key risks"),
+            "no",
+        )
 
     def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
         from newsbot.deal_bot import _choose
