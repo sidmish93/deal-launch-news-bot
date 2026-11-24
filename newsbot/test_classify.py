@@ -412,6 +412,38 @@ class ClassifyTests(unittest.TestCase):
             offer_status("Sebi board brings back open-market share buybacks; eases debt listing"),
             "no",
         )
+        self.assertEqual(
+            offer_status("Sammaan Capital gets open offer from Avenir, IHC for 26% stake"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Give reasons before forcing the acquirer into an open offer, SAT tells SEBI"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("IHC becomes promoter of Sammaan Capital after completing open offer"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("38 companies file IPO papers in March; 64 await SEBI approval"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Primary market action: Nearly a dozen companies file IPO papers with SEBI"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("IPO rush: 9 companies, including Trans ACNR Solutions, submit draft IPO papers to SEBI"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Wipro's buyback could give up to 14% returns to investors in the short-term"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("56% returns in six months! Ola Electric Mobility to raise ₹1,000 crore via rights issue"),
+            "firm",
+        )
 
     def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
         from newsbot.deal_bot import _choose

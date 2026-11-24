@@ -140,7 +140,7 @@ def classify(text: str) -> str | None:
         or "a share" in low
         or "apiece" in low
         or re.search(r"\bat\s+(?:₹|rs\.?\s*\d)", low)
-        or re.search(r"\b(?:launch\w*|makes?|making|announc\w*|triggers?)\b", low)
+        or re.search(r"\b(?:launch\w*|makes?|making|announc\w*|triggers?|gets?|receiv\w*)\b", low)
     ):
         return "Open offer"
     if "offer for sale" in low or re.search(r"\bofs\b", low):
@@ -372,6 +372,14 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
     if re.search(r"\bamong (?:\d+\s+)?new issues\b|\bfull list\b", low):
         return True
     if re.search(r"\bdrhps\b|\bipo index\b", low):
+        return True
+    if "including" not in low and re.search(
+        r"\b\d+\s+(?:companies|firms|cos)\b.{0,50}\b(?:file|files|filed|submit|submits|submitted)\b"
+        r"|\b(?:a |nearly a )?dozen companies\b.{0,50}\b(?:file|files|filed|submit)\b",
+        low,
+    ):
+        return True
+    if re.search(r"\bcould give up to \d+(?:\.\d+)?%\s+returns\b", low):
         return True
     if (
         kind == "Buyback"
