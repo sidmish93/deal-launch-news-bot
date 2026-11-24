@@ -1,7 +1,7 @@
 import datetime
 import unittest
 
-from newsbot.feeds import Deal, _indian_issue, classify, classify_press, direct_url
+from newsbot.feeds import Deal, _indian_issue, classify, classify_press, confirm_offer, direct_url, offer_status
 
 
 class ClassifyTests(unittest.TestCase):
@@ -103,6 +103,73 @@ class ClassifyTests(unittest.TestCase):
             "https%3a%2f%2fwww.cnbctv18.com%2fmarket%2fstory.htm&c=1"
         )
         self.assertEqual(direct_url(link), "https://www.cnbctv18.com/market/story.htm")
+
+    def test_a_headline_that_only_names_the_offer_is_confirmed_from_the_verb_beside_it(self):
+        headline = "Acme Industries mulls IPO next year"
+        self.assertEqual(offer_status(headline), "maybe")
+        self.assertEqual(confirm_offer(headline), "IPO")
+        self.assertIsNone(confirm_offer("SEBI chairman bats for 2,000 more listings, pre-IPO framework"))
+        self.assertEqual(
+            confirm_offer(
+                "Acme Industries board meets Thursday",
+                "The company is considering an IPO to fund its expansion.",
+            ),
+            "IPO",
+        )
+        self.assertEqual(offer_status("Lenskart shares fall nearly 4% as Rs 921-crore block deal takes place"), "no")
+        self.assertEqual(
+            offer_status("Should you buy IDBI shares? Is it a good banking stock to bet on amid Fairfax stake sale deal"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Dividend, Buyback, rights issue record date Nov 25: Zee, Vraj Iron, Bonlon, and more"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Up to 5 InvITs expected to go public by March 2027 and launch IPOs"),
+            "no",
+        )
+        self.assertIsNone(confirm_offer("Fintech WeRize posts Rs 44 crore profit, targets 10x growth ahead of IPO"))
+
+    def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
+        from newsbot.deal_bot import _choose
+
+        now = datetime.datetime(2026, 11, 24, 12, 0, tzinfo=datetime.timezone.utc)
+        old = Deal(
+            id="press:https://example.com/old",
+            kind="IPO",
+            company="Old Co files IPO papers",
+            summary="",
+            source="Mint",
+            url="https://example.com/old",
+            published=now - datetime.timedelta(hours=40),
+        )
+        fresh = Deal(
+            id="press:https://example.com/new",
+            kind="IPO",
+            company="New Co files IPO papers",
+            summary="",
+            source="Mint",
+            url="https://example.com/new",
+            published=now - datetime.timedelta(hours=2),
+        )
+        state = {"seen": [], "held": {}, "watching": False}
+        chosen = _choose([old, fresh], [], state, now)
+        self.assertEqual([deal.company for deal in chosen], ["New Co files IPO papers"])
+        self.assertEqual(state["held"][old.url], old.company)
+        late = Deal(
+            id="press:https://example.com/late",
+            kind="IPO",
+            company="Late Co files IPO papers",
+            summary="",
+            source="Mint",
+            url="https://example.com/late",
+            published=now - datetime.timedelta(hours=50),
+        )
+        chosen = _choose([old, late], [], state, now)
+        self.assertEqual([deal.company for deal in chosen], ["Late Co files IPO papers"])
+        state["seen"].append(late.id)
+        self.assertEqual(_choose([late], [], state, now), [])
 
     def test_message_is_headline_source_time_and_link(self):
         published = datetime.datetime(2026, 11, 19, 18, 15, tzinfo=datetime.timezone.utc)

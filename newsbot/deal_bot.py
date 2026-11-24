@@ -83,7 +83,7 @@ def main() -> None:
 
 
 def _print_deals() -> None:
-    deals = _fetch()
+    deals, _rejected = press_deals()
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=BACKFILL_HOURS)
     recent = [d for d in deals if d.published and d.published >= cutoff]
     print(f"{len(deals)} classified, {len(recent)} in the last {BACKFILL_HOURS}h")
@@ -98,9 +98,10 @@ def _replay_day(token: str, state: dict, day: str) -> None:
         wanted = datetime.date.fromisoformat(day)
     except ValueError:
         sys.exit("day must be YYYY-MM-DD")
+    listed, _rejected = press_deals()
     deals = [
         deal
-        for deal in _fetch()
+        for deal in listed
         if deal.published and deal.published.astimezone(IST).date() == wanted
     ]
     deals.sort(key=lambda deal: deal.published or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
@@ -116,49 +117,108 @@ def _replay_day(token: str, state: dict, day: str) -> None:
 
 def _poll(token: str, state: dict) -> None:
     try:
-        deals = _fetch()
+        deals, rejected = press_deals(_sent_urls(state), state.get("held") or {})
     except Exception as exc:
         print("feed error: " + _redact(exc, token), flush=True)
         return
+    if not state["primed"]:
+        _prime(token, state, deals, rejected)
+        return
+    chosen = _choose(deals, rejected, state)
+    sent = 0
+    for deal in chosen:
+        polished = polish_headline(deal)
+        if polished is None:
+            state["held"][deal.url] = deal.company
+            continue
+        text = polished.format()
+        if not _broadcast(token, state, text):
+            continue
+        state["seen"] = _trim(state["seen"] + [deal.id])
+        state["held"].pop(deal.url, None)
+        state["recent"].append({"text": text, "id": deal.id})
+        sent += 1
+    state["recent"] = state["recent"][-30:]
+    print(f"{sent} new deals, {len(state['chats'])} chats", flush=True)
+
+
+def _sent_urls(state: dict) -> set[str]:
+    urls = set()
+    for item_id in state.get("seen", []):
+        if isinstance(item_id, str) and item_id.startswith("press:"):
+            urls.add(item_id[len("press:"):])
+    return urls
+
+
+def _choose(deals: list[Deal], rejected: list[tuple[str, str]], state: dict, now=None) -> list[Deal]:
+    """What to send now. A url is remembered with the title that was judged.
+
+    The first run only sends the last 36 hours, so the lists already on disk
+    are not dumped into the group. After that, a url is sent when it first
+    appears, including when the paper lists it late. A title the paper changes
+    is judged again. Nothing is marked sent until Telegram accepts it.
+    """
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    cutoff = now - datetime.timedelta(hours=BACKFILL_HOURS)
+    ancient = now - datetime.timedelta(days=7)
+    watching = bool(state.get("watching"))
+    held = state.setdefault("held", {})
+    seen = set(state.get("seen", []))
+    chosen = []
+    for deal in deals:
+        if deal.id in seen or held.get(deal.url) == deal.company:
+            continue
+        stale = deal.published is None or deal.published < (cutoff if not watching else ancient)
+        if stale:
+            held[deal.url] = deal.company
+            continue
+        chosen.append(deal)
+    for url, title in rejected:
+        held[url] = title
+    state["watching"] = True
+    if len(held) > 3000:
+        for key in list(held)[: len(held) - 3000]:
+            del held[key]
+    state["held"] = held
+    return chosen
+
+
+def _prime(token: str, state: dict, deals: list[Deal], rejected: list[tuple[str, str]]) -> None:
     seen = set(state["seen"])
     fresh = [d for d in deals if d.id not in seen]
-    if not state["primed"]:
-        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=BACKFILL_HOURS)
-        to_send = [d for d in fresh if d.published is None or d.published >= cutoff]
-        to_send.sort(key=lambda d: d.published or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
-        overflow = max(0, len(to_send) - BACKFILL_CAP)
-        to_send = to_send[-BACKFILL_CAP:]
-        state["primed"] = True
-        state["seen"] = _trim([d.id for d in deals])
-        if overflow and state["chats"]:
-            _broadcast(token, state, f"{overflow} older deals from the last day were skipped.")
-    else:
-        to_send = fresh
-        state["seen"] = _trim(state["seen"] + [d.id for d in fresh])
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=BACKFILL_HOURS)
+    to_send = [d for d in fresh if d.published is None or d.published >= cutoff]
+    to_send.sort(key=lambda d: d.published or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+    overflow = max(0, len(to_send) - BACKFILL_CAP)
+    to_send = to_send[-BACKFILL_CAP:]
+    state["primed"] = True
+    state["watching"] = True
+    sent_ids = []
     for deal in to_send:
         polished = polish_headline(deal)
         if polished is None:
             continue
         text = polished.format()
-        _broadcast(token, state, text)
+        if not _broadcast(token, state, text):
+            continue
+        sent_ids.append(deal.id)
         state["recent"].append({"text": text, "id": deal.id})
+    state["seen"] = _trim(state["seen"] + sent_ids)
+    held = state.setdefault("held", {})
+    sent = set(sent_ids)
+    attempted = {deal.id for deal in to_send}
+    for deal in deals:
+        if deal.id in attempted and deal.id not in sent:
+            continue
+        if deal.id not in sent and deal.id not in set(state["seen"]):
+            held[deal.url] = deal.company
+    for url, title in rejected:
+        held[url] = title
+    state["held"] = held
     state["recent"] = state["recent"][-30:]
-    print(f"{len(to_send)} new deals, {len(state['chats'])} chats", flush=True)
-
-
-def _fetch() -> list[Deal]:
-    deals = []
-    errors = []
-    for loader in (press_deals,):
-        try:
-            deals.extend(_within(loader, 100))
-        except Exception as exc:
-            errors.append(f"{loader.__name__}: {exc}")
-    if errors and not deals:
-        raise RuntimeError("; ".join(errors))
-    for err in errors:
-        print("feed skipped: " + err, flush=True)
-    return deals
+    if overflow and state["chats"]:
+        _broadcast(token, state, f"{overflow} older deals from the last day were skipped.")
+    print(f"{len(sent_ids)} new deals, {len(state['chats'])} chats", flush=True)
 
 
 def _within(loader, seconds: int):
@@ -374,14 +434,17 @@ def _add_chat(token: str, state: dict, chat_id: int, welcome: bool = True) -> No
         print(f"delivered {len(state['recent'][-20:])} to {chat_id}", flush=True)
 
 
-def _broadcast(token: str, state: dict, text: str) -> None:
+def _broadcast(token: str, state: dict, text: str) -> bool:
+    """True when at least one group accepted the message."""
     _groups_only(state)
+    delivered = False
     for chat_id in list(state["chats"]):
         if chat_id not in state["chats"]:
             continue
         target = chat_id
         try:
             _send(token, target, text)
+            delivered = True
         except RuntimeError as exc:
             moved = _migrated_chat_id(exc)
             if moved is None:
@@ -394,8 +457,10 @@ def _broadcast(token: str, state: dict, text: str) -> None:
                 continue
             try:
                 _send(token, moved, text)
+                delivered = True
             except RuntimeError as exc2:
                 print(f"send to {moved} failed: {_redact(exc2, token)}", flush=True)
+    return delivered
 
 
 def _configure_bot(token: str) -> None:
@@ -523,6 +588,8 @@ def _load_state() -> dict:
     state.setdefault("recent", [])
     state.setdefault("primed", False)
     state.setdefault("offset", 0)
+    state.setdefault("held", {})
+    state.setdefault("watching", False)
     return state
 
 

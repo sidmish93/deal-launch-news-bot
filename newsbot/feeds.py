@@ -196,25 +196,47 @@ def _is_roundup(low: str) -> bool:
     """A diary of several corporate actions, not one issue."""
     if re.search(r"\brecord dates\b", low):
         return True
+    if re.search(r"\brecord date\b", low):
+        actions = sum(
+            phrase in low
+            for phrase in ("dividend", "buyback", "buy-back", "buy back", "rights issue", "stock split", "bonus")
+        )
+        if actions >= 2:
+            return True
+    if re.search(r"\binvits\b", low) and re.search(r"\b(?:expected|likely) to\b|\bup to \d", low):
+        return True
     return "alert" in low and re.search(r"\bdividends?\b.{0,40}\bbuy-?backs?\b", low) is not None
+
+
+def _blocks_issue(title: str, kind: str | None = None) -> bool:
+    """Price moves, foreign listings, grey-market notes, and roundups are not a deal."""
+    low = (title or "").lower()
+    if any(skip in low for skip in PRESS_SKIP):
+        return True
+    if re.search(r"\b(nasdaq|nyse)\b", low) or "wall street" in low:
+        return True
+    if "securities and exchange commission" in low and "sebi" not in low:
+        return True
+    # A dollar amount with no rupee figure is a foreign offer. "Stake sale" is
+    # the Indian phrase, and the valuation beside it is often written in dollars.
+    indian_money = "crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low)
+    stake = kind == "Stake" or "stake sale" in low
+    if not stake and "$" in (title or "") and not indian_money:
+        return True
+    if _price_reaction(low) or _is_roundup(low):
+        return True
+    if re.search(r"\bshould you buy\b|\bgood stock to bet\b|\bwhat (?:market )?experts say\b", low):
+        return True
+    if stake and re.search(r"\b(strike|protest|scam)\b", low):
+        return True
+    return False
 
 
 def _indian_issue(title: str, kind: str) -> bool:
     """The headline has to be the Indian issue itself, whichever deal word it uses."""
+    if _blocks_issue(title, kind):
+        return False
     low = (title or "").lower()
-    if re.search(r"\b(nasdaq|nyse)\b", low) or "wall street" in low:
-        return False
-    if "securities and exchange commission" in low and "sebi" not in low:
-        return False
-    # A dollar amount with no rupee figure is a foreign offer. "Stake sale" is
-    # the Indian phrase, and the valuation beside it is often written in dollars.
-    indian_money = "crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low)
-    if kind != "Stake" and "$" in (title or "") and not indian_money:
-        return False
-    if _price_reaction(low) or _is_roundup(low):
-        return False
-    if kind == "Stake" and re.search(r"\b(strike|protest|scam)\b", low):
-        return False
     if kind != "IPO":
         return True
     # The sitemap is the whole paper. Mentioning an IPO is not the same as
@@ -233,6 +255,59 @@ def _indian_issue(title: str, kind: str) -> bool:
     ))
 
 
+# Verbs a headline uses when the strict list above does not. Kept next to the
+# offer word so "investors mull the impact of an IPO" does not qualify.
+_OFFER_ACTION = re.compile(
+    r"\b(?:mulls?|mulling|considers?|considering|explores?|exploring|seeks?|seeking|"
+    r"lines up|lining up|gears up|gearing up|targets?|targeting|looks to|looking to|"
+    r"set to|readies|readying|revives?|reviving|pushes back|pushed back|"
+    r"prepares|preparing|in talks)\b.{0,50}\b"
+    r"(?:ipos?|drhp|udrhp|rhp|qip|fpo|stake sale|offer for sale|preferential issue|"
+    r"rights issue|buy-?back|block deal|bulk deal)\b"
+    r"|\b(?:ipos?|drhp|udrhp|rhp|qip|fpo)\b.{0,40}\b"
+    r"(?:mulls?|mulling|considers?|considering|explores?|exploring|seeks?|seeking|"
+    r"lines up|lining up|gears up|gearing up|readies|readying|revives?|reviving)\b",
+    re.I,
+)
+
+
+def offer_status(title: str) -> str:
+    """firm: send from the headline. maybe: the offer is named, the verb is not. no: drop."""
+    kind = classify_press(title)
+    if not kind or _blocks_issue(title, kind):
+        return "no"
+    if _indian_issue(title, kind):
+        return "firm"
+    return "maybe"
+
+
+def confirm_offer(headline: str, description: str = "") -> str | None:
+    """Send when the headline or the article says the company is doing the offer."""
+    blob = _SPACE.sub(" ", f"{headline} {description}").strip()
+    kind = classify_press(headline) or classify_press(blob)
+    if not kind:
+        return None
+    if _blocks_issue(blob, kind) or _blocks_issue(headline, kind):
+        return None
+    if _indian_issue(headline, kind) or _indian_issue(blob, kind):
+        return kind
+    low = blob.lower()
+    if re.match(r"(investors|analysts|brokerages|markets|the market|dalal street)\b", low):
+        return None
+    if kind == "IPO" and _offer_action(blob):
+        return "IPO"
+    return None
+
+
+def _offer_action(text: str) -> bool:
+    """The verb has to act on the offer, not sit near a passing mention of one."""
+    match = _OFFER_ACTION.search(text or "")
+    if not match:
+        return False
+    gap = match.group(0).lower()
+    return "ahead of" not in gap and "growth" not in gap
+
+
 def direct_url(link: str) -> str:
     """Bing wraps the article in a click tracker. The publisher URL is in the query."""
     parsed = urllib.parse.urlparse(link or "")
@@ -249,9 +324,20 @@ def _on_source(url: str, domain: str) -> bool:
     return host == domain or host.endswith("." + domain)
 
 
-def press_deals() -> list[Deal]:
+def press_deals(
+    skip_urls: set[str] | None = None,
+    held_titles: dict[str, str] | None = None,
+) -> tuple[list[Deal], list[tuple[str, str]]]:
+    """Firm deals, plus headlines that name an offer once the article confirms it.
+
+    The second list is urls judged and not sent, with the title that was judged.
+    A later poll retries a url when the paper changes that title. skip_urls are
+    already delivered. The article clock is not a reason to drop a url: the
+    caller sends a story when it first appears on a list.
+    """
     socket.setdefaulttimeout(15)
-    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=36)
+    skip_urls = skip_urls or set()
+    held_titles = held_titles or {}
     sources = list(SOURCES)
     for name in ET_VERTICALS:
         feeds = (f"https://{name}.economictimes.indiatimes.com/rss/recentstories",)
@@ -264,32 +350,110 @@ def press_deals() -> list[Deal]:
             False,
             feeds,
         ))
-    found: list[list[Deal]] = []
+    found: list[tuple[list[Deal], list[Deal]]] = []
     pool = ThreadPoolExecutor(max_workers=12)
     try:
-        futures = [pool.submit(_source_deals, source, cutoff) for source in sources]
+        futures = [
+            pool.submit(_source_deals, source, skip_urls, held_titles) for source in sources
+        ]
         for future in futures:
             try:
                 found.append(future.result(timeout=40))
             except Exception as exc:
                 print(f"feed skipped: {exc}", flush=True)
-                found.append([])
+                found.append(([], []))
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
-    deals = []
+    firms: list[Deal] = []
+    maybes: list[Deal] = []
     seen = set()
-    for batch in found:
-        for deal in batch:
+    for firm_batch, maybe_batch in found:
+        for deal in firm_batch + maybe_batch:
             if deal.url in seen:
                 continue
             seen.add(deal.url)
-            deals.append(deal)
-    return deals
+            if deal in firm_batch:
+                firms.append(deal)
+            else:
+                maybes.append(deal)
+    ready, rejected = _promote_maybes(maybes)
+    return firms + ready, rejected
 
 
-def _source_deals(source: tuple, cutoff: datetime.datetime) -> list[Deal]:
+def _promote_maybes(maybes: list[Deal]) -> tuple[list[Deal], list[tuple[str, str]]]:
+    """A named offer with no clear verb is checked against the article, once."""
+    ready: list[Deal] = []
+    needs_page: list[Deal] = []
+    rejected: list[tuple[str, str]] = []
+    for deal in maybes:
+        kind = confirm_offer(deal.company, "")
+        if kind:
+            ready.append(dataclasses.replace(deal, kind=kind))
+        else:
+            needs_page.append(deal)
+    if not needs_page:
+        return ready, rejected
+    pool = ThreadPoolExecutor(max_workers=8)
+    try:
+        futures = {pool.submit(_judge_page, deal): deal for deal in needs_page[:20]}
+        for future, deal in futures.items():
+            try:
+                judged = future.result(timeout=8)
+            except Exception:
+                continue
+            if judged is None:
+                rejected.append((deal.url, deal.company))
+            else:
+                ready.append(judged)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    return ready, rejected
+
+
+def _judge_page(deal: Deal) -> Deal | None:
+    found = _article_blurb(deal.url)
+    if found is None:
+        raise TimeoutError(deal.url)
+    title, description = found
+    use = title or deal.company
+    kind = confirm_offer(use, description)
+    if not kind:
+        return None
+    return dataclasses.replace(
+        deal,
+        kind=kind,
+        company=use,
+        summary=(description or deal.summary)[:300],
+    )
+
+
+def _article_blurb(url: str) -> tuple[str, str] | None:
+    """The article headline and description. None means the page did not load."""
+    try:
+        page = _fetch(url)[:250_000].decode("utf-8", "replace")
+    except Exception:
+        return None
+    title = _meta(page, "og:title") or _meta(page, "twitter:title")
+    description = _meta(page, "og:description") or _meta(page, "description")
+    if title:
+        title = re.sub(
+            r"\s+[|\-–—]\s+(?:NDTV Profit|Moneycontrol|Mint|Business Standard|"
+            r"Economic Times|ET|CNBC TV18)\s*$",
+            "",
+            title,
+            flags=re.I,
+        ).strip()
+    return title, description
+
+
+def _source_deals(
+    source: tuple,
+    skip_urls: set[str],
+    held_titles: dict[str, str],
+) -> tuple[list[Deal], list[Deal]]:
     label, domain, sitemaps, use_bing, feeds = source
-    deals = []
+    firms: list[Deal] = []
+    maybes: list[Deal] = []
     seen = set()
     if domain == "ndtvprofit.com":
         # The news sitemap carries the headline. The daily files are the backup
@@ -304,7 +468,10 @@ def _source_deals(source: tuple, cutoff: datetime.datetime) -> list[Deal]:
             print(f"feed skipped: {label}: {exc}", flush=True)
             continue
         for title, link, published in entries:
-            _add_deal(deals, seen, label, domain, title, link, published, "", cutoff)
+            _add_deal(
+                firms, maybes, seen, skip_urls, held_titles,
+                label, domain, title, link, published, "",
+            )
     for url in feeds:
         try:
             items = _items(url)
@@ -314,7 +481,10 @@ def _source_deals(source: tuple, cutoff: datetime.datetime) -> list[Deal]:
         for item in items:
             title = _text(item.find("title"))
             link = direct_url(_text(item.find("link")) or _text(item.find("guid")))
-            _add_deal(deals, seen, label, domain, title, link, _when(item), _text(item.find("description")), cutoff)
+            _add_deal(
+                firms, maybes, seen, skip_urls, held_titles,
+                label, domain, title, link, _when(item), _text(item.find("description")),
+            )
     if use_bing:
         for query in BING_QUERIES:
             try:
@@ -327,32 +497,55 @@ def _source_deals(source: tuple, cutoff: datetime.datetime) -> list[Deal]:
                 link = direct_url(_text(item.find("link")) or _text(item.find("guid")))
                 published = _when(item)
                 description = _text(item.find("description"))
-                _add_deal(deals, seen, label, domain, title, link, published, description, cutoff)
-    return deals
+                _add_deal(
+                    firms, maybes, seen, skip_urls, held_titles,
+                    label, domain, title, link, published, description,
+                )
+    return firms, maybes
 
 
-def _add_deal(deals, seen, label, domain, title, link, published, description, cutoff) -> None:
-    kind = classify_press(title)
-    if not kind or not _indian_issue(title, kind):
+def _add_deal(
+    firms,
+    maybes,
+    seen,
+    skip_urls,
+    held_titles,
+    label,
+    domain,
+    title,
+    link,
+    published,
+    description,
+) -> None:
+    if not link or not _on_source(link, domain) or link in seen or link in skip_urls:
         return
-    if published is None or published < cutoff:
+    if held_titles.get(link) == title:
         return
-    if not link or not _on_source(link, domain):
+    status = offer_status(title)
+    if status == "no":
         return
-    if link in seen:
+    # A list with no clock cannot be told from a stale sitemap entry.
+    if published is None:
         return
     seen.add(link)
-    deals.append(
-        Deal(
-            id="press:" + link,
-            kind=kind,
-            company=title,
-            summary=(description or label)[:300],
-            source=label,
-            url=link,
-            published=published,
-        )
+    kind = classify_press(title) or "IPO"
+    deal = Deal(
+        id="press:" + link,
+        kind=kind,
+        company=title,
+        summary=(description or label)[:300],
+        source=label,
+        url=link,
+        published=published,
     )
+    if status == "firm":
+        firms.append(deal)
+    else:
+        confirmed = confirm_offer(title, description)
+        if confirmed:
+            firms.append(dataclasses.replace(deal, kind=confirmed))
+        else:
+            maybes.append(deal)
 
 
 def _ndtv_daily_sitemaps() -> tuple[str, ...]:
@@ -400,19 +593,20 @@ def polish_headline(deal: Deal) -> Deal | None:
     """Open an NDTV article for its real headline. None means the page is not a deal."""
     if deal.source != "NDTV Profit":
         return deal
-    try:
-        page = _fetch(deal.url)[:250_000].decode("utf-8", "replace")
-    except Exception:
+    found = _article_blurb(deal.url)
+    if found is None:
         return deal
-    title = _meta(page, "og:title") or _meta(page, "twitter:title")
-    if title:
-        title = re.sub(r"\s+[|\-–—]\s+NDTV Profit\s*$", "", title).strip()
+    title, description = found
     headline = title or deal.company
-    kind = classify_press(headline)
-    if not kind or not _indian_issue(headline, kind):
+    kind = confirm_offer(headline, description)
+    if not kind:
         return None
-    when = _iso_when(_meta(page, "article:published_time"))
-    return dataclasses.replace(deal, kind=kind, company=headline, published=when or deal.published)
+    return dataclasses.replace(
+        deal,
+        kind=kind,
+        company=headline,
+        summary=(description or deal.summary)[:300],
+    )
 
 
 def _meta(page: str, prop: str) -> str:
