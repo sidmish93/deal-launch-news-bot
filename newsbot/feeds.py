@@ -277,8 +277,14 @@ def _grey_market(low: str) -> bool:
     return not (deal and deal.start() < gmp.start())
 
 
+_PRICE_VERBS = (
+    "fall|falls|fell|plunge|plunges|plunged|tank|tanks|tanked|slide|slides|slid|"
+    "tumble|tumbles|crash|crashes|jump|jumps|jumped|surge|surges|rise|rises|rose|"
+    "drop|drops|dropped|sink|sinks|sank"
+)
+_PRICE_VERB = re.compile(rf"\b(?:{_PRICE_VERBS})\b")
 _PRICE_MOVE = re.compile(
-    r"\b(?:shares|stocks?|share price|stock price)\b.{0,60}\b(?:fall|falls|fell|plunge|plunges|plunged|tank|tanks|tanked|slide|slides|slid|tumble|tumbles|crash|crashes|jump|jumps|jumped|surge|surges|rise|rises|rose|drop|drops|dropped|sink|sinks|sank)\b"
+    rf"\b(?:shares|stocks?|share price|stock price)\b.{{0,60}}\b(?:{_PRICE_VERBS})\b"
     r"|\b(?:shares|stocks?|share price|stock price) down\b"
     r"|\bpares? losses\b"
     r"|\btrad(?:e|es|ing) flat\b"
@@ -286,20 +292,35 @@ _PRICE_MOVE = re.compile(
     r"|\bshare price in focus\b",
 )
 _DEAL_WORD = re.compile(
-    r"\b(?:qip|block deal|bulk deal|buy-?back|buyback|rights issue|rights offer|rights basis|preferential issue|open offer|offer for sale|ofs|share sale)\b"
+    r"\b(?:qip|block deals?|bulk deals?|buy-?back|buyback|rights issue|rights offer|rights basis|preferential issue|open offer|offer for sale|ofs|share sale)\b"
     r"|\bfund[\s-]?rais(?:e|ing|es)\b|\braising funds\b|\bfund raise\b|\braise funds\b"
 )
 
 
 def _price_reaction(low: str) -> bool:
     """The share price is the story, and the deal is only the reason it moved."""
-    match = _PRICE_MOVE.search(low)
-    if not match:
-        return False
     if re.search(r"\bpares? losses\b|\bshare price in focus\b", low):
         return True
     deal = _DEAL_WORD.search(low)
     size = re.search(r"crore|₹|\brs\.?\s*\d|\$\s*\d", low)
+    match = None
+    for candidate in _PRICE_MOVE.finditer(low):
+        window = low[candidate.start():candidate.end()]
+        split = _DEAL_WORD.search(window)
+        # "sells 1.8 crore shares via block deals; Stock rises": the price
+        # verb only follows the sale, and the size is already named.
+        if (
+            split
+            and split.start() > 0
+            and size
+            and size.start() < candidate.end()
+            and not _PRICE_VERB.search(window[:split.start()])
+        ):
+            continue
+        match = candidate
+        break
+    if not match:
+        return False
     if deal and size and deal.start() < match.start() and size.start() < match.start():
         return False
     # The board approved it, or the offer was launched, and the rupee size is named.
@@ -307,6 +328,13 @@ def _price_reaction(low: str) -> bool:
     if rupee and re.search(r"\bboard approv(?:es|ed)\b|\blaunch(?:es|ed)?\b", low):
         return False
     return True
+
+
+def _sets_record_date(low: str) -> bool:
+    """A notice that only sets the record date. Announcing the offer still counts."""
+    if not re.search(r"\bsets?\b.{0,40}\brecord date\b", low):
+        return False
+    return re.search(r"\b(?:announc\w*|approv\w*|declar\w*)\b", low) is None
 
 
 def _is_roundup(low: str) -> bool:
@@ -376,7 +404,7 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
     }
     if not domestic and "$" in (title or "") and not indian_money:
         return True
-    if _price_reaction(low) or _is_roundup(low):
+    if _price_reaction(low) or _is_roundup(low) or _sets_record_date(low):
         return True
     if re.search(r"\bshould you (?:buy|subscribe|apply|participate)\b|\bgood stock to bet\b|\bwhat (?:market )?experts say\b", low):
         return True

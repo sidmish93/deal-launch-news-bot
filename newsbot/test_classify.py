@@ -539,6 +539,54 @@ class ClassifyTests(unittest.TestCase):
             offer_status("Swiggy to use nearly half of Rs 10,000 crore QIP proceeds for quick commerce expansion"),
             "firm",
         )
+        self.assertEqual(
+            offer_status("Mphasis promoter sells 1.8 crore shares via block deals; Stock rises"),
+            "firm",
+        )
+        self.assertEqual(
+            classify("Mphasis promoter sells 1.8 crore shares via block deals; Stock rises"),
+            "Block",
+        )
+        self.assertEqual(
+            offer_status("Lenskart Solutions shares fall 5% after ₹1,895 crore block deals; Alphawave likely seller"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Groww shares snap 9-day winning streak, fall 7% on multiple block deals"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Price Action: Neogen Chemicals shares fall 4% on QIP launch; Shankesh Jewellers surges 12% after Q1 profit doubles"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Infosys sets November 14 as record date for Rs 18,000 crore share buyback"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Genus Power sets October 30 record date for ₹148-crore buyback - Offer price and key details"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Rolex Rings sets July 3 as record date for ₹180-crore share buyback"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Infosys to start largest ever share buyback of ₹18,000 crore on Nov 20"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Wipro announces share buyback worth ₹15,000 crore. Check price, record date and other details"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("PVR INOX approves ₹300 crore buyback at ₹1,450 per share; record date set for Sept 4"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Ola Electric rights issue at ₹27: 26% discount to market price; check record date, key dates and details"),
+            "firm",
+        )
 
     def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
         from newsbot.deal_bot import _choose
