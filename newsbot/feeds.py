@@ -1,11 +1,12 @@
 """ECM headlines from the six publications' own news sitemaps.
 
-Bing's news search only returns a short, unstable list, so a story could be
-published in the morning and stay invisible until that list happened to
-include it. Each paper's sitemap is the list of what it actually published.
-Economic Times verticals are not on the main list; each one publishes a
-48-hour sitemap. NDTV Profit and ET Auto refuse Python's HTTP client, so a
-blocked list is read again with a browser TLS fingerprint.
+Each paper's sitemap is the list of what it actually published. CNBC TV18's
+news sitemap trails its latest feed by a few minutes, so that feed is read
+too. Economic Times verticals are not on the main list; each one publishes a
+48-hour sitemap plus its recent-stories feed. NDTV Profit and ET Auto refuse
+Python's HTTP client, so a blocked list is read again with a browser TLS
+fingerprint. Bing stays as a backup for NDTV Profit and the Economic Times
+main site; it runs well behind the sitemaps.
 """
 
 from __future__ import annotations
@@ -29,7 +30,13 @@ IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 # from each vertical's own recent-stories feed. NDTV Profit's daily sitemap is
 # the list of what it published. A narrow Bing query stays as a backup.
 SOURCES = (
-    ("CNBC TV18", "cnbctv18.com", ("https://www.cnbctv18.com/commonfeeds/v1/cne/sitemap/google-news.xml",), False, ()),
+    (
+        "CNBC TV18",
+        "cnbctv18.com",
+        ("https://www.cnbctv18.com/commonfeeds/v1/cne/sitemap/google-news.xml",),
+        False,
+        ("https://www.cnbctv18.com/commonfeeds/v1/cne/rss/latest.xml",),
+    ),
     ("Moneycontrol", "moneycontrol.com", ("https://www.moneycontrol.com/news/news-sitemap.xml",), False, ()),
     ("NDTV Profit", "ndtvprofit.com", (), True, ()),
     (

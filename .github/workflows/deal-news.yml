@@ -1,8 +1,9 @@
 name: ECM news
 
-# ECM headlines run all week. Five minutes is the shortest interval GitHub
-# Actions will run. The minutes avoid :00, when GitHub is most likely to drop
-# a scheduled run. A public repository is not billed for the minutes.
+# Live polls are workflow_dispatch, about once a minute. The schedule is only a
+# backup: GitHub often drops a one-minute cron. One poll runs at a time, so a
+# slow checkout waits instead of sending the same headline twice. A public
+# repository is not billed for the minutes.
 on:
   schedule:
     - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"

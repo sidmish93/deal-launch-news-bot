@@ -32,6 +32,12 @@ WELCOME = (
     "Business Standard, and Mint.\n"
     "Commands: /latest  /status"
 )
+SHORT_DESCRIPTION = "IPO, QIP, OFS, rights, preferential, and block-deal launches."
+DESCRIPTION = (
+    "Posts IPO, QIP, OFS, rights, preferential, buyback, and block-deal "
+    "headlines from CNBC TV18, Moneycontrol, NDTV Profit, Economic Times, "
+    "Business Standard, and Mint."
+)
 
 
 def main() -> None:
@@ -468,19 +474,8 @@ def _configure_bot(token: str) -> None:
     print(f"connected as @{me.get('username')}", flush=True)
     optional = (
         ("deleteWebhook", None),
-        (
-            "setMyShortDescription",
-            {"short_description": "IPO, QIP, OFS, rights, preferential, and block-deal launches."},
-        ),
-        (
-            "setMyDescription",
-            {
-                "description": (
-                    "Posts equity capital-markets deal launches from NSE filings "
-                    "and from Economic Times, Mint, Business Standard, Moneycontrol, and Reuters."
-                )
-            },
-        ),
+        ("setMyShortDescription", {"short_description": SHORT_DESCRIPTION}),
+        ("setMyDescription", {"description": DESCRIPTION}),
         (
             "setMyCommands",
             {
