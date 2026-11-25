@@ -587,6 +587,54 @@ class ClassifyTests(unittest.TestCase):
             offer_status("Ola Electric rights issue at ₹27: 26% discount to market price; check record date, key dates and details"),
             "firm",
         )
+        self.assertEqual(
+            offer_status("All Time Plastics sets price band of Rs 260-275 a share"),
+            "firm",
+        )
+        self.assertEqual(
+            classify_press("All Time Plastics sets price band of Rs 260-275 a share"),
+            "IPO",
+        )
+        self.assertEqual(
+            offer_status("WeWork India sets price band of Rs 615-648 per share, targets near $1 bn valuation"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Sebi approves four IPOs including Dr Agarwal's Health, two DRHPs withdrawn"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Kent RO Promoters To Sell 1.01 Crore Shares Via IPO, DRHP Shows"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Boat cuts IPO size to ₹1,500 crore from ₹2,000 crore, UDRHP shows"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Blackstone floats open offer to acquire up to 26% in Kolte-Patil Developers"),
+            "firm",
+        )
+        self.assertEqual(
+            classify("Blackstone floats open offer to acquire up to 26% in Kolte-Patil Developers"),
+            "Open offer",
+        )
+        self.assertEqual(
+            offer_status("Shadowfax takes confidential route to file paper for Rs 2,500-crore IPO"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Infosys share buyback: Here's a look at India's biggest share repurchases"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Wockhardt QIP bids dominated by major mutual funds"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Zomato successfully concludes QIP issue"),
+            "firm",
+        )
 
     def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
         from newsbot.deal_bot import _choose

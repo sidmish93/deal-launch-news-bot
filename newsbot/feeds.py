@@ -140,7 +140,7 @@ def classify(text: str) -> str | None:
         or "a share" in low
         or "apiece" in low
         or re.search(r"\bat\s+(?:₹|rs\.?\s*\d)", low)
-        or re.search(r"\b(?:launch\w*|makes?|making|announc\w*|triggers?|gets?|receiv\w*)\b", low)
+        or re.search(r"\b(?:launch\w*|makes?|making|announc\w*|triggers?|gets?|receiv\w*|floats?)\b", low)
     ):
         return "Open offer"
     if "offer for sale" in low or re.search(r"\bofs\b", low):
@@ -181,6 +181,9 @@ def classify_press(title: str) -> str | None:
     if kind:
         return kind
     if re.search(r"\bipos?\b", low):
+        return "IPO"
+    # "sets price band of Rs 260-275 a share" is the issue even when IPO is unsaid.
+    if re.search(r"\bprice band\b", low) and _rupee_amount(low):
         return "IPO"
     return None
 
@@ -417,7 +420,11 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
         low,
     ):
         return True
-    if re.search(r"\bdrhp shows\b|\bdata from\b.{0,40}\bdrhp\b", low):
+    if re.search(r"\bdata from\b.{0,40}\bdrhp\b", low):
+        return True
+    if re.search(r"\bhere(?:['\u2019]s| is) a look\b|\ba look at\b", low):
+        return True
+    if re.search(r"\bqip bids\b|\bbids dominated\b", low):
         return True
     if kind in {"OFS", "Stake"} and re.search(r"\d+-year high", low):
         return True
@@ -427,7 +434,9 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
         return True
     if re.search(r"\bamong (?:\d+\s+)?new issues\b|\bfull list\b", low):
         return True
-    if re.search(r"\bdrhps\b|\bipo index\b", low):
+    if re.search(r"\bipo index\b", low):
+        return True
+    if "including" not in low and re.search(r"\bdrhps\b", low):
         return True
     if "including" not in low and re.search(
         r"\b\d+\s+(?:companies|firms|cos)\b.{0,50}\b(?:file|files|filed|submit|submits|submitted)\b"
@@ -449,7 +458,7 @@ def _blocks_issue(title: str, kind: str | None = None) -> bool:
 
 
 _IPO_VERBS = (
-    r"\bfiles\b", r"\bfiling\b", r"\bfiled\b", r"ipo papers",
+    r"\bfiles\b", r"\bfiling\b", r"\bfiled\b", r"\bfile papers?\b", r"ipo papers",
     r"\bto launch\b", r"\blaunches\b", r"\blaunched\b", r"\bwill launch\b", r"\bmay launch\b", r"\bmight launch\b",
     r"\bto raise\b",
     r"\braises\b.{0,40}(?:₹|\brs\b|\d)", r"\braising\b.{0,40}(?:₹|\brs\b|\d|funds|capital)",
