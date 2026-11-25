@@ -131,7 +131,7 @@ def classify(text: str) -> str | None:
         return prospectus
     if re.search(r"\bqip\b", low) or "qualified institutional placement" in low:
         return "QIP"
-    if "block deal" in low or "bulk deal" in low:
+    if "block deal" in low or "bulk deal" in low or re.search(r"\bvia blocks?\b", low):
         return "Block"
     if "open offer" in low and (
         "crore" in low
@@ -140,7 +140,10 @@ def classify(text: str) -> str | None:
         or "a share" in low
         or "apiece" in low
         or re.search(r"\bat\s+(?:₹|rs\.?\s*\d)", low)
-        or re.search(r"\b(?:launch\w*|makes?|making|announc\w*|triggers?|gets?|receiv\w*|floats?)\b", low)
+        or re.search(
+            r"\b(?:launch\w*|makes?|making|announc\w*|triggers?|gets?|receiv\w*|floats?|to open)\b",
+            low,
+        )
     ):
         return "Open offer"
     if "offer for sale" in low or re.search(r"\bofs\b", low):
@@ -195,7 +198,7 @@ def _is_stake(low: str) -> bool:
     if _is_priced_percent_purchase(low):
         return True
     if not re.search(
-        r"\b(?:acquir\w*|buys?|buying|offloads?|sells?|selling|divests?|divesting|pares?|paring|trims?|trimming|hikes?|hiking)\b.{0,50}\bstakes?\b",
+        r"\b(?:acquir\w*|buys?|buying|offloads?|sells?|selling|divests?|divesting|pares?|paring|trims?|trimming|hikes?|hiking|pick(?:s|ed|ing)?)\b.{0,50}\bstakes?\b",
         low,
     ):
         return False
@@ -470,7 +473,7 @@ _IPO_VERBS = (
     r"\bdelays\b", r"\bdelayed\b", r"\bdelaying\b",
     r"\bpostpones\b", r"\bpostponed\b",
     r"\bplans?\b", r"\bplanning\b", r"\bslips?\s+to\b", r"\bslipped\s+to\b",
-    r"\bshelves\b", r"\bshelved\b", r"\bshelving\b", r"\bon hold\b",
+    r"\bshelves\b", r"\bshelved\b", r"\bshelving\b", r"\bon hold\b", r"\babeyance\b",
     r"\bwithdraws?\b", r"\bwithdrawn\b", r"\bwithdrawal\b", r"\bscraps\b", r"\bscrapped\b",
     r"\bdivests?\b", r"\bdivesting\b",
     r"\bsubscription window\b",
@@ -481,6 +484,8 @@ _IPO_VERBS = (
 _IPO_HEADLINE_VERBS = _IPO_VERBS + (
     r"\bapprovals?\b",
     r"\bgreen light\b",
+    r"\bgreenlights?\b",
+    r"\bprices\b.{0,25}\bipos?\b",
     r"\bclears\b", r"\bcleared\b",
     r"-\s*ipos?\s*$",
 )

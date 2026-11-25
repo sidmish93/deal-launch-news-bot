@@ -635,6 +635,58 @@ class ClassifyTests(unittest.TestCase):
             offer_status("Zomato successfully concludes QIP issue"),
             "firm",
         )
+        self.assertEqual(
+            offer_status("Rajiv Jain's GQG Partners picks 0.8% stake in Bharti Airtel for Rs 5,850 crore"),
+            "firm",
+        )
+        self.assertEqual(
+            classify("Rajiv Jain's GQG Partners picks 0.8% stake in Bharti Airtel for Rs 5,850 crore"),
+            "Stake",
+        )
+        self.assertEqual(
+            offer_status("Zerodha founders Nithin, Nikhil Kamath pick up 6.72% stake in Viceroy Hotels"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("PB Fintech's Yashish Dahiya, Alok Bansal to sell shares worth Rs 1,053 crore via block today"),
+            "firm",
+        )
+        self.assertEqual(
+            classify("PB Fintech's Yashish Dahiya, Alok Bansal to sell shares worth Rs 1,053 crore via block today"),
+            "Block",
+        )
+        self.assertEqual(
+            offer_status("Ola Electric prices IPO at Rs 72-76 per share"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Anthropic prices IPO at $83 a share, above target range, according to sources"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("UltraTech Cement's open offer for ICL to open on Sept 19, close on Oct 3"),
+            "firm",
+        )
+        self.assertEqual(
+            classify("UltraTech Cement's open offer for ICL to open on Sept 19, close on Oct 3"),
+            "Open offer",
+        )
+        self.assertEqual(
+            offer_status("Sebi puts JSW Cement's ₹4,000 crore IPO in ‘Abeyance’"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("SEBI greenlights the much-awaited NSE IPO"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Sagility India files prospectus"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Cello World board approves fundraising through QIP, plans to issue 86.5 lakh shares; stock jumps 4%"),
+            "no",
+        )
 
     def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
         from newsbot.deal_bot import _choose
