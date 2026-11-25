@@ -157,7 +157,7 @@ def classify(text: str) -> str | None:
         return "Preferential"
     if "buy-back" in low or "buyback" in low or "buy back" in low:
         return "Buyback"
-    if _is_board_fundraise(low):
+    if _is_board_fundraise(low) or _is_institutional_share_sale(low):
         return "Fundraise"
     if _is_stake(low):
         return "Stake"
@@ -189,6 +189,8 @@ def _is_stake(low: str) -> bool:
     """A stake sale, or a purchase of a stake that names the price or the offer."""
     if re.search(r"\bstakes? sale\b|\bsale\b.{0,12}\bstakes?\b", low):
         return True
+    if _is_priced_percent_purchase(low):
+        return True
     if not re.search(
         r"\b(?:acquir\w*|buys?|buying|offloads?|sells?|selling|divests?|divesting|pares?|paring|trims?|trimming|hikes?|hiking)\b.{0,50}\bstakes?\b",
         low,
@@ -201,6 +203,32 @@ def _is_stake(low: str) -> bool:
         or "open offer" in low
         or "share purchase" in low
     )
+
+
+def _rupee_amount(low: str) -> bool:
+    return "crore" in low or "₹" in low or re.search(r"\brs\.?\s*\d", low) is not None
+
+
+def _is_priced_percent_purchase(low: str) -> bool:
+    """Buying a stated slice of a company for a rupee amount is a stake."""
+    if not re.search(
+        r"\b(?:buy(?:s|ing)?|acquir\w*)\b.{0,40}"
+        r"\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?\s*%\s+(?:of|in)\b",
+        low,
+    ):
+        return False
+    return _rupee_amount(low)
+
+
+def _is_institutional_share_sale(low: str) -> bool:
+    """A priced sale to institutions is a fundraise even when it is not called a QIP."""
+    if "institutional share sale" not in low or not _rupee_amount(low):
+        return False
+    if re.search(r"\b(?:debt|bonds?|ncds?|treasury|yields?)\b", low):
+        return False
+    if re.search(r"\bseries\s+[a-e]\b|\bpre-series\b|\bfunding round\b|\bventure capital\b", low):
+        return False
+    return True
 
 
 def _is_priced_share_sale(low: str) -> bool:

@@ -491,6 +491,54 @@ class ClassifyTests(unittest.TestCase):
             offer_status("Razorpay moves closer to public market debut as Sebi gives green signal to IPO"),
             "no",
         )
+        self.assertEqual(
+            offer_status("Japan's Aica Kogyo to buy 40-53% of Stylam Industries for ₹1,500-2,000 crore"),
+            "firm",
+        )
+        self.assertEqual(
+            classify("Japan's Aica Kogyo to buy 40-53% of Stylam Industries for ₹1,500-2,000 crore"),
+            "Stake",
+        )
+        self.assertEqual(
+            offer_status("Tata Steel to buy 26.6% in APL Apollo Tubes for ₹15,511 crore"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("Blackstone set to acquire 15% of IIFL for Rs 5,000 crore"),
+            "firm",
+        )
+        self.assertEqual(
+            offer_status("MUFG will not need RBI approval to acquire 20% in Shriram Finance"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("APL Apollo Tubes shares crash 20% after Tata Steel set to acquire controlling stake for Rs 15,511 crore"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Your Rs 1 Lakh Buys 25% More Gold This Dhanteras Than In January"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("IndiGrid Infra Trust launches institutional share sale to raise up to ₹1,500 crore"),
+            "firm",
+        )
+        self.assertEqual(
+            classify("IndiGrid Infra Trust launches institutional share sale to raise up to ₹1,500 crore"),
+            "Fundraise",
+        )
+        self.assertEqual(
+            offer_status("JSW Energy to raise ₹4,000 crore via share sale — Check indicative issue price and other details"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Aegis Logistics opens ₹6,000-crore share sale, sets floor price at ₹1,161.85"),
+            "no",
+        )
+        self.assertEqual(
+            offer_status("Swiggy to use nearly half of Rs 10,000 crore QIP proceeds for quick commerce expansion"),
+            "firm",
+        )
 
     def test_a_late_listing_is_sent_after_the_first_run_has_remembered_the_lists(self):
         from newsbot.deal_bot import _choose
